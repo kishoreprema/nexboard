@@ -199,7 +199,10 @@ const db = new sqlite3.Database(dbPath, (err) => {
     }
 });
 
-// --- API Endpoints ---
+// DEBUG
+app.get('/api/debug', (req, res) => {
+    res.json({ url: req.url, originalUrl: req.originalUrl, path: req.path, method: req.method });
+});
 
 // AUTHENTICATION
 app.post('/api/login', (req, res) => {
