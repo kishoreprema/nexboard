@@ -61,6 +61,18 @@ if (!process.env.DATABASE_URL) {
     console.error("The app will attempt to connect to localhost:5432 and likely FAIL.");
 }
 
+// Middleware to check DB availability
+app.use((req, res, next) => {
+    if (!process.env.DATABASE_URL && req.path.startsWith('/api')) {
+        return res.status(503).json({
+            error: "Backend Misconfigured",
+            details: "The DATABASE_URL environment variable is missing on Vercel. Please add it to your project settings and redeploy.",
+            diagnostic_url: "/api/debug-env"
+        });
+    }
+    next();
+});
+
 const pool = new Pool({
     connectionString: process.env.DATABASE_URL,
     ssl: { rejectUnauthorized: false }
