@@ -54,6 +54,9 @@ document.addEventListener('DOMContentLoaded', () => {
     // Bind to the existing avatar button
     const avatarBtns = document.querySelectorAll('.avatar-btn'); // Handles multiple if present
 
+    const isLocal = (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+    const API_URL = isLocal ? 'http://localhost:3000/api' : '/api';
+
     function updateAvatarsGlobally(userData) {
         document.querySelectorAll('.avatar-btn').forEach(btn => {
             const hasDot = btn.querySelector('#user-status-dot');

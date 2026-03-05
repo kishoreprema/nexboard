@@ -4,7 +4,9 @@
  */
 
 // Backend API URL
-var API_URL = API_URL || '/api';
+var API_URL = (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
+    ? 'http://localhost:3000/api'
+    : '/api';
 
 // Auth Check
 var currentUserLine = currentUserLine || localStorage.getItem('nexboard_currentUser');
