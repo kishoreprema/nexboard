@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NexBoard - Admin Dashboard</title>
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <!-- FontAwesome for icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="style.css?v=20">
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+
+<body>
+    <div class="app-container">
+        <!-- Sidebar / Header -->
+        <header class="navbar">
+            <div class="logo">
+                <i class="fa-solid fa-layer-group"></i>
+                <h2>NexBoard</h2>
+            </div>
+            <div class="nav-actions" style="display: flex; align-items: center;">
+                <button id="manage-team-btn"
+                    style="margin-right: 12px; padding: 8px 16px; border-radius: var(--border-radius-sm); border: 1px solid var(--border-color); background: transparent; cursor: pointer; color: var(--text-secondary); font-family: 'Inter', sans-serif; font-weight: 500;">
+                    <i class="fa-solid fa-users"></i> Manage All Users
+                </button>
+                <button id="logout-btn"
+                    style="margin-left: 12px; padding: 8px 16px; border-radius: var(--border-radius-sm); border: 1px solid var(--border-color); background: transparent; cursor: pointer; color: var(--text-secondary); font-family: 'Inter', sans-serif; font-weight: 500;">
+                    <i class="fa-solid fa-right-from-bracket"></i> Logout
+                </button>
+                <button id="theme-toggle-btn" class="theme-toggle-btn"><i class="fa-solid fa-moon"></i></button>
+                <div style="display: flex; align-items: center; gap: 8px; position: relative;">
+                    <button class="avatar-btn" style="position: relative; overflow: visible;">
+                        <span id="user-status-dot"
+                            style="position: absolute; bottom: -2px; right: -2px; width: 12px; height: 12px; border-radius: 50%; background-color: #36B37E; border: 2px solid white; z-index: 10;"></span>
+                    </button>
+                    <select id="user-status-select"
+                        style="border: none; background: transparent; color: var(--text-secondary); font-family: 'Inter', sans-serif; font-size: 0.85rem; cursor: pointer; outline: none; padding-right: 4px;">
+                        <option value="available">Available</option>
+                        <option value="busy">Busy</option>
+                        <option value="away">Away</option>
+                    </select>
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Dashboard Area -->
+        <main class="dashboard-container">
+            <div class="dashboard-header text-center">
+                <h1 id="welcome-msg" style="color: var(--text-primary); font-size: 2rem; margin-bottom: 8px;">Admin
+                    Dashboard</h1>
+                <p class="subtitle" style="color: var(--text-secondary); margin-bottom: 24px;">Global view of all
+                    projects and users.</p>
+
+                <div class="dashboard-controls"
+                    style="display: flex; gap: 16px; justify-content: center; max-width: 600px; margin: 0 auto 40px auto;">
+                    <div class="search-box" style="flex: 1; position: relative;">
+                        <i class="fa-solid fa-magnifying-glass"
+                            style="position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--text-secondary);"></i>
+                        <input type="text" placeholder="Search projects..." id="project-search-input"
+                            style="width: 100%; padding: 10px 12px 10px 36px; border: 2px solid var(--border-color); border-radius: var(--border-radius-sm); background-color: #FAFBFC;">
+                    </div>
+                    <button id="create-project-btn" class="primary-btn">
+                        <i class="fa-solid fa-plus"></i> Create Project
+                    </button>
+                </div>
+            </div>
+
+            <div class="dashboard-content"
+                style="display: flex; gap: 24px; align-items: flex-start; max-width: 1400px; margin: 0 auto;">
+                <!-- Projects Grid -->
+                <div class="projects-grid" id="projects-grid"
+                    style="flex: 2; display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 24px;">
+                    <!-- Project cards will be injected here via dashboard.js -->
+                </div>
+
+                <!-- Global Task Chart -->
+                <div class="chart-container"
+                    style="flex: 1; min-width: 350px; background: white; padding: 24px; border-radius: var(--border-radius-md); box-shadow: var(--shadow-sm); border: 1px solid var(--border-color); position: sticky; top: 20px;">
+                    <h3 style="text-align: left; margin-bottom: 16px; font-size: 1.1rem; color: var(--text-primary);">
+                        Overall Task Progress</h3>
+                    <canvas id="global-task-chart"></canvas>
+
+                    <h3
+                        style="text-align: left; margin-top: 32px; margin-bottom: 16px; font-size: 1.1rem; color: var(--text-primary);">
+                        Team Availability</h3>
+                    <canvas id="availabilityChart" style="max-height: 250px;"></canvas>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Create Project Modal -->
+    <div class="modal-overlay hidden" id="project-modal">
+        <div class="modal-content" style="max-width: 450px;">
+            <div class="modal-header">
+                <h2>Create New Project</h2>
+                <button class="icon-btn" id="close-project-modal"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <form id="project-form">
+                <div class="modal-body">
+                    <div class="form-group">
+                        <label for="project-name">Project Name <span class="required">*</span></label>
+                        <input type="text" id="project-name" placeholder="e.g. Website Redesign" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="project-key">Project Key (Prefix) <span class="required">*</span></label>
+                        <input type="text" id="project-key" placeholder="e.g. WEB" required maxlength="5"
+                            style="text-transform: uppercase;">
+                    </div>
+                    <div class="form-group">
+                        <label for="project-desc">Description</label>
+                        <textarea id="project-desc" placeholder="What is this project about?" rows="3"></textarea>
+                    </div>
+                    <div class="form-group">
+                        <label for="project-manager">Project Manager</label>
+                        <select id="project-manager">
+                            <option value="">No Manager Assigned</option>
+                            <!-- PMs injected here -->
+                        </select>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="secondary-btn" id="cancel-project">Cancel</button>
+                    <button type="submit" class="primary-btn">Create Project</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Delete Confirm Modal -->
+    <div class="modal-overlay hidden" id="delete-modal">
+        <div class="modal-content" style="max-width: 400px; text-align: center;">
+            <div style="color: var(--accent-red); font-size: 3rem; margin-bottom: 16px;">
+                <i class="fa-solid fa-triangle-exclamation"></i>
+            </div>
+            <h2 style="margin-bottom: 8px;">Delete Project?</h2>
+            <p style="color: var(--text-secondary); margin-bottom: 24px;">This action cannot be undone. All tasks
+                associated with this project will be permanently deleted.</p>
+            <div style="display: flex; gap: 12px; justify-content: center;">
+                <button class="secondary-btn" id="cancel-delete">Cancel</button>
+                <button class="primary-btn" id="confirm-delete" style="background-color: var(--accent-red);">Yes,
+                    Delete</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Manage Team Modal -->
+    <div class="modal-overlay hidden" id="team-modal">
+        <div class="modal-content" style="max-width: 500px;">
+            <div class="modal-header">
+                <h2>Manage All Users</h2>
+                <button class="icon-btn" id="close-team-modal"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div class="modal-body">
+                <div class="team-list" id="team-list"
+                    style="margin-bottom: 24px; max-height: 200px; overflow-y: auto; display: flex; flex-direction: column; gap: 12px;">
+                    <!-- Users injected here -->
+                </div>
+                <hr style="border: none; border-top: 1px solid var(--border-color); margin-bottom: 24px;">
+                <form id="team-form">
+                    <div
+                        style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+                        <h3 id="team-form-title" style="font-size: 1rem; margin: 0;">Add New User</h3>
+                        <button type="button" id="cancel-edit-user" class="hidden"
+                            style="background: transparent; border: none; color: var(--text-secondary); cursor: pointer; font-size: 0.85rem;"><i
+                                class="fa-solid fa-xmark"></i> Cancel Edit</button>
+                    </div>
+                    <div style="display: flex; flex-direction: column; gap: 12px; margin-bottom: 16px;">
+                        <input type="text" id="new-user-name" placeholder="Full Name (e.g. Jane Doe)" required
+                            style="width: 100%; padding: 10px; border: 1px solid var(--border-color); border-radius: var(--border-radius-sm);">
+
+                        <div style="display: flex; gap: 12px;">
+                            <div style="flex: 1; position: relative;">
+                                <i class="fa-solid fa-envelope"
+                                    style="position: absolute; left: 10px; top: 50%; transform: translateY(-50%); color: var(--text-secondary); font-size: 0.9rem;"></i>
+                                <input type="email" id="new-user-email" placeholder="Email Address"
+                                    style="width: 100%; padding: 10px 10px 10px 32px; border: 1px solid var(--border-color); border-radius: var(--border-radius-sm);">
+                            </div>
+                            <div style="flex: 1; position: relative;">
+                                <i class="fa-solid fa-phone"
+                                    style="position: absolute; left: 10px; top: 50%; transform: translateY(-50%); color: var(--text-secondary); font-size: 0.9rem;"></i>
+                                <input type="tel" id="new-user-phone" placeholder="Phone Number"
+                                    style="width: 100%; padding: 10px 10px 10px 32px; border: 1px solid var(--border-color); border-radius: var(--border-radius-sm);">
+                            </div>
+                        </div>
+                        <div style="display: flex; gap: 12px;">
+                            <div style="flex: 1; position: relative;">
+                                <select id="new-user-role" required
+                                    style="width: 100%; padding: 10px; border: 1px solid var(--border-color); border-radius: var(--border-radius-sm); color: var(--text-secondary);">
+                                    <option value="employee">Employee</option>
+                                    <option value="pm">Project Manager</option>
+                                    <option value="admin">Admin</option>
+                                </select>
+                            </div>
+                            <div style="flex: 1; position: relative;">
+                                <i class="fa-solid fa-lock"
+                                    style="position: absolute; left: 10px; top: 50%; transform: translateY(-50%); color: var(--text-secondary); font-size: 0.9rem;"></i>
+                                <input type="text" id="new-user-password"
+                                    placeholder="Password (default is password123)"
+                                    style="width: 100%; padding: 10px 10px 10px 32px; border: 1px solid var(--border-color); border-radius: var(--border-radius-sm);">
+                            </div>
+                        </div>
+                    </div>
+                    <button type="button" id="save-user-btn" class="primary-btn" style="width: 100%;"
+                        onclick="handleTeamSubmit(event)">Create User</button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <script src="chat-widget.js?v=1"></script>
+    <script src="admin-dashboard.js?v=2"></script>
+    <script src="profile.js?v=1"></script>
+    <script src="theme.js"></script>
+    <script>
+        // Inline script to handle Logout globally
+        document.getElementById('logout-btn').addEventListener('click', () => {
+            window.location.href = 'login.html';
+        });
+    </script>
+
+</body>
+
+</html>

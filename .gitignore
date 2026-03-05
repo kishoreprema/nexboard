@@ -1,0 +1,7 @@
+node_modules/
+database.sqlite
+nexboard.db
+sqlitebrowser/
+sqlitebrowser.zip
+.DS_Store
+*.log

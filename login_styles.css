@@ -1,0 +1,76 @@
+/* =========================================================================
+   AUTH PAGE (LOGIN)
+   ========================================================================= */
+.auth-page {
+    background-color: var(--bg-main);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100vh;
+    padding: 20px;
+    /* Optional geometric background pattern to make it premium */
+    background-image: radial-gradient(var(--border-color) 1px, transparent 1px);
+    background-size: 20px 20px;
+}
+
+.auth-container {
+    width: 100%;
+    max-width: 400px;
+}
+
+.auth-card {
+    background-color: var(--bg-surface);
+    border-radius: var(--border-radius-lg);
+    box-shadow: 0 10px 30px rgba(9, 30, 66, 0.1);
+    padding: 40px;
+}
+
+.auth-header {
+    text-align: center;
+    margin-bottom: 32px;
+}
+
+.auth-header .logo {
+    justify-content: center;
+    margin-bottom: 24px;
+    font-size: 1.5rem;
+}
+
+.auth-header h1 {
+    font-size: 1.25rem;
+    color: var(--text-primary);
+}
+
+.full-width {
+    width: 100%;
+    justify-content: center;
+    padding: 10px;
+    font-size: 1rem;
+    margin-top: 8px;
+}
+
+.auth-link {
+    color: var(--primary-blue);
+    text-decoration: none;
+    font-size: 0.85rem;
+    font-weight: 500;
+    transition: var(--transition-fast);
+}
+
+.auth-link:hover {
+    color: var(--primary-blue-hover);
+    text-decoration: underline;
+}
+
+.auth-footer {
+    text-align: center;
+    margin-top: 24px;
+    padding-top: 24px;
+    border-top: 1px solid var(--border-color);
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+}
+
+.btn-group {
+    margin-top: 24px;
+}
