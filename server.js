@@ -53,6 +53,9 @@ console.log('__dirname:', __dirname);
 console.log('process.cwd():', process.cwd());
 
 // Initialize PostgreSQL Database Pool
+console.log("Loading Postgres Pool...");
+console.log("DATABASE_URL is:", process.env.DATABASE_URL ? "SET" : "UNDEFINED");
+
 const pool = new Pool({
     connectionString: process.env.DATABASE_URL,
     ssl: { rejectUnauthorized: false }
@@ -897,6 +900,14 @@ app.get('/api/activity/task/:id', async (req, res) => {
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
+});
+
+app.get('/api/debug-env', (req, res) => {
+    res.json({
+        database_url_status: process.env.DATABASE_URL ? "CONFIGURED" : "UNDEFINED",
+        node_env: process.env.NODE_ENV || "UNDEFINED",
+        vercel: process.env.VERCEL ? "TRUE" : "FALSE"
+    });
 });
 
 app.listen(port, () => {
