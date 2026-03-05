@@ -4,7 +4,7 @@
  */
 
 // Backend API URL
-var API_URL = API_URL || 'http://localhost:3000/api';
+var API_URL = API_URL || '/api';
 
 // Auth Check
 var currentUserLine = currentUserLine || localStorage.getItem('nexboard_currentUser');

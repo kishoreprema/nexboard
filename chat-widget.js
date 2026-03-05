@@ -4,7 +4,7 @@
  * and global unread notifications on dashboard pages.
  */
 
-const CHAT_API_URL = 'http://localhost:3000/api';
+const CHAT_API_URL = '/api';
 const CHAT_currentUserLine = localStorage.getItem('nexboard_currentUser');
 const CHAT_User = CHAT_currentUserLine ? JSON.parse(CHAT_currentUserLine) : null;
 

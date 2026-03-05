@@ -153,7 +153,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         try {
-            const res = await fetch(`http://localhost:3000/api/users/${user.id}/profile`, {
+            const res = await fetch(`/api/users/${user.id}/profile`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload)

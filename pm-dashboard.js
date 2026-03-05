@@ -4,7 +4,7 @@
  */
 
 // Backend API URL
-const API_URL = 'http://localhost:3000/api';
+const API_URL = '/api';
 
 // Auth Check
 const currentUserLine = localStorage.getItem('nexboard_currentUser');
