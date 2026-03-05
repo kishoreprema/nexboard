@@ -72,16 +72,6 @@ if (isVercel && !fs.existsSync(dbPath)) {
 
 console.log(`Using database at: ${dbPath}`);
 
-// Root route handler for Vercel
-app.get('/', (req, res) => {
-    res.sendFile(path.join(__dirname, 'index.html'));
-});
-
-// Explicit route for stylesheets if needed
-app.get('/style.css', (req, res) => {
-    res.sendFile(path.join(__dirname, 'style.css'));
-});
-
 const db = new sqlite3.Database(dbPath, (err) => {
     if (err) {
         console.error('Error opening database', err.message);
