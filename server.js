@@ -44,17 +44,20 @@ const port = 3000;
 
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
-app.use(express.static(process.cwd()));
+app.use(express.static(__dirname));
+
+console.log('__dirname:', __dirname);
+console.log('process.cwd():', process.cwd());
 
 // Initialize SQLite Database
 const isVercel = process.env.VERCEL === '1';
 const dbPath = isVercel
     ? path.join('/tmp', 'database.sqlite')
-    : path.resolve(process.cwd(), 'database.sqlite');
+    : path.resolve(__dirname, 'database.sqlite');
 
 // If on Vercel, we might need to copy the initial database if it doesn't exist in /tmp
 if (isVercel && !fs.existsSync(dbPath)) {
-    const sourcePath = path.resolve(process.cwd(), 'database.sqlite');
+    const sourcePath = path.resolve(__dirname, 'database.sqlite');
     if (fs.existsSync(sourcePath)) {
         try {
             fs.copyFileSync(sourcePath, dbPath);
@@ -71,7 +74,12 @@ console.log(`Using database at: ${dbPath}`);
 
 // Root route handler for Vercel
 app.get('/', (req, res) => {
-    res.sendFile(path.join(process.cwd(), 'index.html'));
+    res.sendFile(path.join(__dirname, 'index.html'));
+});
+
+// Explicit route for stylesheets if needed
+app.get('/style.css', (req, res) => {
+    res.sendFile(path.join(__dirname, 'style.css'));
 });
 
 const db = new sqlite3.Database(dbPath, (err) => {
