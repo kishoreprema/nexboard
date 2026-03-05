@@ -33,13 +33,16 @@ function sendNotificationEmail(toEmail, subject, htmlBody) {
 }
 
 // Helper: Look up user email and send notification
-function notifyUserByEmail(userId, subject, htmlBody) {
+async function notifyUserByEmail(userId, subject, htmlBody) {
     if (!userId) return;
-    db.get("SELECT email FROM users WHERE id = ?", [userId], (err, row) => {
-        if (row && row.email) {
-            sendNotificationEmail(row.email, subject, htmlBody);
+    try {
+        const res = await pool.query("SELECT email FROM users WHERE id = $1", [userId]);
+        if (res.rows.length > 0 && res.rows[0].email) {
+            sendNotificationEmail(res.rows[0].email, subject, htmlBody);
         }
-    });
+    } catch (err) {
+        console.error('NotifyUser error:', err.message);
+    }
 }
 
 const app = express();
@@ -903,8 +906,18 @@ app.get('/api/activity/task/:id', async (req, res) => {
 });
 
 app.get('/api/debug-env', (req, res) => {
+    let host = "NONE";
+    if (process.env.DATABASE_URL) {
+        try {
+            const url = new URL(process.env.DATABASE_URL);
+            host = url.host;
+        } catch (e) {
+            host = "INVALID_URL";
+        }
+    }
     res.json({
         database_url_status: process.env.DATABASE_URL ? "CONFIGURED" : "UNDEFINED",
+        database_host: host,
         node_env: process.env.NODE_ENV || "UNDEFINED",
         vercel: process.env.VERCEL ? "TRUE" : "FALSE"
     });
