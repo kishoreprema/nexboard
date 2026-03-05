@@ -53,11 +53,11 @@ console.log('process.cwd():', process.cwd());
 const isVercel = process.env.VERCEL === '1';
 const dbPath = isVercel
     ? path.join('/tmp', 'database.sqlite')
-    : path.resolve(__dirname, '..', 'database.sqlite');
+    : path.join(process.cwd(), 'database.sqlite');
 
 // If on Vercel, we might need to copy the initial database if it doesn't exist in /tmp
 if (isVercel && !fs.existsSync(dbPath)) {
-    const sourcePath = path.resolve(__dirname, '..', 'database.sqlite');
+    const sourcePath = path.join(process.cwd(), 'database.sqlite');
     if (fs.existsSync(sourcePath)) {
         try {
             fs.copyFileSync(sourcePath, dbPath);
