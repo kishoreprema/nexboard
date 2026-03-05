@@ -2,6 +2,8 @@ const express = require('express');
 const sqlite3 = require('sqlite3').verbose();
 const cors = require('cors');
 const nodemailer = require('nodemailer');
+const path = require('path');
+const fs = require('fs');
 
 // Gmail SMTP Transport
 const mailTransporter = nodemailer.createTransport({
@@ -45,7 +47,27 @@ app.use(express.json({ limit: '10mb' }));
 app.use(express.static(__dirname));
 
 // Initialize SQLite Database
-const db = new sqlite3.Database('./database.sqlite', (err) => {
+const isVercel = process.env.VERCEL === '1';
+const dbPath = isVercel
+    ? path.join('/tmp', 'database.sqlite')
+    : path.resolve(__dirname, 'database.sqlite');
+
+// If on Vercel, we might need to copy the initial database if it doesn't exist in /tmp
+if (isVercel && !fs.existsSync(dbPath)) {
+    const sourcePath = path.resolve(__dirname, 'database.sqlite');
+    if (fs.existsSync(sourcePath)) {
+        try {
+            fs.copyFileSync(sourcePath, dbPath);
+            console.log('Database copied to /tmp');
+        } catch (err) {
+            console.error('Error copying database to /tmp:', err.message);
+        }
+    }
+}
+
+console.log(`Using database at: ${dbPath}`);
+
+const db = new sqlite3.Database(dbPath, (err) => {
     if (err) {
         console.error('Error opening database', err.message);
     } else {
