@@ -50,7 +50,7 @@ const port = 3000;
 
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
-app.use(express.static(path.join(__dirname, 'public')));
+app.use(express.static(path.join(__dirname, '..', 'public')));
 
 console.log('__dirname:', __dirname);
 console.log('process.cwd():', process.cwd());
