@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Log in to NexBoard</title>
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- FontAwesome for icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="style.css?v=8">
+</head>
+
+<body class="auth-page">
+    <!-- Animated AI Background Canvas -->
+    <canvas id="ai-canvas"
+        style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 0; pointer-events: none;"></canvas>
+
+    <button id="theme-toggle-btn" class="theme-toggle-btn"
+        style="position: fixed; top: 20px; right: 20px; z-index: 10;"><i class="fa-solid fa-moon"></i></button>
+
+    <div class="auth-container" style="position: relative; z-index: 1;">
+        <div class="auth-card">
+            <div class="auth-header">
+                <div class="logo justify-center">
+                    <i class="fa-solid fa-layer-group"></i>
+                    <h2>NexBoard</h2>
+                </div>
+                <h1>Log in to continue</h1>
+            </div>
+
+            <div id="login-view">
+                <form id="login-form">
+                    <div class="form-group">
+                        <input type="text" id="username" placeholder="Enter username or email" required
+                            autocomplete="username">
+                    </div>
+                    <div class="form-group">
+                        <input type="password" id="password" placeholder="Enter password" required
+                            autocomplete="current-password">
+                    </div>
+                    <div class="form-group options"
+                        style="display: flex; flex-direction: row; justify-content: space-between; align-items: center; margin-bottom: 24px;">
+                        <label
+                            style="display: flex; align-items: center; gap: 8px; cursor: pointer; color: var(--text-secondary); font-size: 0.9rem;">
+                            <input type="checkbox" checked> Remember me
+                        </label>
+                        <a href="#" id="show-forgot"
+                            style="color: var(--primary-blue); font-size: 0.9rem; font-weight: 600; text-decoration: none;">Forgot
+                            password?</a>
+                    </div>
+                    <button type="submit" class="primary-btn full-width" id="login-btn"
+                        style="padding: 12px; font-size: 1rem; justify-content: center;">Log In</button>
+                    <div style="text-align: center; margin-top: 10px;">
+                        <span id="error-msg" style="color: var(--accent-red); font-size: 0.85rem;"></span>
+                    </div>
+                </form>
+                <div style="text-align: center; margin-top: 24px;">
+                    <span style="color: var(--text-secondary); font-size: 0.95rem;">Don't have an account? <a href="#"
+                            id="show-signup"
+                            style="color: var(--primary-blue); font-weight: 600; text-decoration: underline; text-underline-offset: 4px;">Sign
+                            up</a></span>
+                </div>
+            </div>
+
+            <!-- Forgot Password View (Hidden) -->
+            <div id="forgot-view" class="hidden">
+                <form id="forgot-form" style="display: flex; flex-direction: column; gap: 16px;">
+                    <p style="color: var(--text-secondary); margin-bottom: 8px; font-size: 0.95rem;">We'll send a
+                        recovery link to your email.</p>
+                    <div class="form-group">
+                        <input type="email" placeholder="Enter your email address" required>
+                    </div>
+                    <button type="submit" class="primary-btn full-width"
+                        style="padding: 12px; font-size: 1rem; justify-content: center;">Send Recovery Link</button>
+                    <div style="text-align: center; margin-top: 16px;">
+                        <a href="#" id="back-to-login-from-forgot"
+                            style="color: var(--text-secondary); font-size: 0.9rem; font-weight: 500; text-decoration: none;"><i
+                                class="fa-solid fa-arrow-left"></i> Back to login</a>
+                    </div>
+                </form>
+            </div>
+
+            <!-- Sign Up View (Hidden) -->
+            <div id="signup-view" class="hidden">
+                <form id="signup-form" style="display: flex; flex-direction: column; gap: 16px;">
+                    <div class="form-group">
+                        <input type="email" placeholder="Email address" id="signup-email" required>
+                    </div>
+                    <div class="form-group">
+                        <input type="text" placeholder="Full name" id="signup-name" required>
+                    </div>
+                    <div class="form-group">
+                        <input type="password" placeholder="Create password" id="signup-password" required>
+                    </div>
+                    <button type="submit" class="primary-btn full-width" id="signup-btn"
+                        style="padding: 12px; font-size: 1rem; justify-content: center;">Sign Up</button>
+                    <div class="form-group" style="text-align: center; margin-bottom: 0;">
+                        <span id="signup-error-msg" style="color: var(--accent-red); font-size: 0.85rem;"></span>
+                    </div>
+                    <div style="text-align: center; margin-top: 16px;">
+                        <span style="color: var(--text-secondary); font-size: 0.95rem;">Already have an account? <a
+                                href="#" id="back-to-login"
+                                style="color: var(--primary-blue); font-weight: 600; text-decoration: underline; text-underline-offset: 4px;">Log
+                                in</a></span>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <script src="login.js?v=2"></script>
+    <script src="theme.js"></script>
+    <script>
+        // AI Digital Code Rain Animation Script
+        const canvas = document.getElementById('ai-canvas');
+        const ctx = canvas.getContext('2d');
+
+        // Full screen
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+
+        let matrix = "ABCDEFGHIJKLMNOPQRSTUVWXYZ123456789@#$%^&*()*&^%+-/~{[|`]}";
+        matrix = matrix.split(""); // Convert string to array of chars
+
+        const fontSize = 14;
+        const columns = canvas.width / fontSize;
+        const drops = [];
+
+        // Initial setup for drops
+        for (let x = 0; x < columns; x++) {
+            drops[x] = 1;
+        }
+
+        function draw() {
+            // Translucent background to show trail
+            ctx.fillStyle = "rgba(238, 242, 255, 0.05)"; // Indigo-tinted white for trail fade on light bg
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            ctx.fillStyle = "rgba(79, 70, 229, 0.4)"; // Primary indigo color for text
+            ctx.font = fontSize + "px 'Inter', monospace";
+
+            // Loop over the drops
+            for (let i = 0; i < drops.length; i++) {
+                // Random character to print
+                const text = matrix[Math.floor(Math.random() * matrix.length)];
+
+                // Draw the char
+                ctx.fillText(text, i * fontSize, drops[i] * fontSize);
+
+                // Send drop back to top randomly after it crosses the screen
+                if (drops[i] * fontSize > canvas.height && Math.random() > 0.975) {
+                    drops[i] = 0;
+                }
+
+                // Increment Y coordinate
+                drops[i]++;
+            }
+        }
+
+        // Resize handler
+        window.addEventListener('resize', () => {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+            // Recalculate drops
+            const newCols = canvas.width / fontSize;
+            drops.length = 0;
+            for (let x = 0; x < newCols; x++) {
+                drops[x] = Math.random() * canvas.height / fontSize; // Start them randomly instead of all at top
+            }
+        });
+
+        setInterval(draw, 35);
+    </script>
+</body>
+
+</html>

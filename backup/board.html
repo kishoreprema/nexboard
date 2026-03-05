@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NexBoard - Jira Clone</title>
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <!-- FontAwesome for icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="style.css?v=3">
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+
+<body>
+    <div class="app-container">
+        <!-- Sidebar / Header -->
+        <header class="navbar">
+            <a href="index.html?v=3" class="logo" style="text-decoration: none; cursor: pointer;">
+                <i class="fa-solid fa-layer-group"></i>
+                <h2>NexBoard</h2>
+            </a>
+            <div class="nav-actions" style="display: flex; align-items: center;">
+                <a href="index.html?v=4" class="secondary-btn"
+                    style="text-decoration: none; padding: 8px 16px; margin-right: 12px; font-size: 0.9rem;"
+                    id="back-to-projects-btn">
+                    <i class="fa-solid fa-folder-open"></i> Projects
+                </a>
+                <button id="theme-toggle-btn" class="theme-toggle-btn"><i class="fa-solid fa-moon"></i></button>
+                <button id="add-task-btn" class="primary-btn">
+                    <i class="fa-solid fa-plus"></i> Create Task
+                </button>
+                <button id="logout-btn"
+                    style="margin-left: 12px; padding: 8px 16px; border-radius: var(--border-radius-sm); border: 1px solid var(--border-color); background: transparent; cursor: pointer; color: var(--text-secondary); font-family: 'Inter', sans-serif; font-weight: 500;">
+                    <i class="fa-solid fa-right-from-bracket"></i> Logout
+                </button>
+                <div style="display: flex; align-items: center; gap: 8px; position: relative;">
+                    <button class="avatar-btn" style="position: relative; overflow: visible;">
+                        <span id="user-status-dot"
+                            style="position: absolute; bottom: -2px; right: -2px; width: 12px; height: 12px; border-radius: 50%; background-color: #36B37E; border: 2px solid white; z-index: 10;"></span>
+                    </button>
+                    <select id="user-status-select"
+                        style="border: none; background: transparent; color: var(--text-secondary); font-family: 'Inter', sans-serif; font-size: 0.85rem; cursor: pointer; outline: none; padding-right: 4px;">
+                        <option value="available">Available</option>
+                        <option value="busy">Busy</option>
+                        <option value="away">Away</option>
+                    </select>
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Board Area -->
+        <main class="board-container">
+            <div class="board-header"
+                style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 24px;">
+                <div>
+                    <h1 id="board-title">Sprint 12</h1>
+                    <p class="subtitle" style="margin-bottom: 16px;">Active sprint covering Q3 marketing initiatives.
+                    </p>
+                </div>
+            </div>
+
+            <!-- Filters -->
+            <div class="filters" style="display: flex; align-items: center; gap: 16px; margin-bottom: 24px;">
+                <div class="search-box">
+                    <i class="fa-solid fa-magnifying-glass"></i>
+                    <input type="text" placeholder="Search tasks..." id="search-input">
+                </div>
+            </div>
+
+            <!-- Main Content Area (Board + Chart Side-by-Side) -->
+            <div class="board-main-content"
+                style="display: flex; gap: 24px; align-items: flex-start; flex: 1; min-height: 0;">
+
+                <!-- Columns Area -->
+                <div class="kanban-board" style="flex: 2; display: flex; gap: 24px; height: 100%;">
+                    <!-- To Do Column -->
+                    <div class="column" data-status="todo" id="todo-column" style="flex: 1;">
+                        <div class="column-header todo-header">
+                            <h3>To Do <span class="task-count" id="todo-count">0</span></h3>
+                        </div>
+                        <div class="task-list" id="todo-list">
+                            <!-- Tasks go here -->
+                        </div>
+                    </div>
+
+                    <!-- In Progress Column -->
+                    <div class="column" data-status="in-progress" id="in-progress-column" style="flex: 1;">
+                        <div class="column-header in-progress-header">
+                            <h3>In Progress <span class="task-count" id="in-progress-count">0</span></h3>
+                        </div>
+                        <div class="task-list" id="in-progress-list">
+                        </div>
+                    </div>
+
+                    <!-- Done Column -->
+                    <div class="column" data-status="done" id="done-column" style="flex: 1;">
+                        <div class="column-header done-header">
+                            <h3>Done <span class="task-count" id="done-count">0</span></h3>
+                        </div>
+                        <div class="task-list" id="done-list">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Project Line Chart -->
+                <div class="project-chart-widget"
+                    style="flex: 1; min-width: 350px; padding: 24px; background: white; border-radius: var(--border-radius-md); box-shadow: var(--shadow-sm); border: 1px solid var(--border-color); position: sticky; top: 20px;">
+                    <h3 style="text-align: left; margin-bottom: 16px; font-size: 1.1rem; color: var(--text-primary);">
+                        Project Activity</h3>
+                    <canvas id="project-task-chart"></canvas>
+                </div>
+
+            </div>
+        </main>
+    </div>
+
+    <!-- Create Task Modal -->
+    <div class="modal-overlay hidden" id="task-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Create New Task</h2>
+                <button class="close-btn" id="close-modal"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <form id="task-form">
+                <div class="modal-body">
+                    <div class="form-group">
+                        <label for="task-title">Task Title</label>
+                        <input type="text" id="task-title" required placeholder="e.g. Design Login Page"
+                            autocomplete="off">
+                    </div>
+                    <div class="form-group">
+                        <label for="task-desc">Description (Optional)</label>
+                        <textarea id="task-desc" rows="4" placeholder="Add more details about this task..."></textarea>
+                    </div>
+                    <div class="form-group-row">
+                        <div class="form-group half-width">
+                            <label for="task-priority">Priority</label>
+                            <select id="task-priority">
+                                <option value="low">Low</option>
+                                <option value="medium" selected>Medium</option>
+                                <option value="high">High</option>
+                            </select>
+                        </div>
+                        <div class="form-group half-width">
+                            <label for="task-type">Task Type</label>
+                            <select id="task-type">
+                                <option value="feature">Feature</option>
+                                <option value="bug">Bug Fix</option>
+                                <option value="task" selected>Task</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="form-group" style="margin-top: 16px;">
+                        <label for="task-assignee">Assignee</label>
+                        <select id="task-assignee">
+                            <option value="">Unassigned</option>
+                        </select>
+                    </div>
+
+                    <!-- Start / End Date -->
+                    <div class="form-group-row" style="margin-top: 16px;">
+                        <div class="form-group half-width">
+                            <label for="task-start-date">Start Date</label>
+                            <input type="date" id="task-start-date">
+                        </div>
+                        <div class="form-group half-width">
+                            <label for="task-end-date">End Date</label>
+                            <input type="date" id="task-end-date">
+                        </div>
+                    </div>
+
+                    <div id="task-dates-display"
+                        style="display: none; font-size: 0.85rem; color: var(--text-secondary); background-color: var(--bg-main); padding: 12px; border-radius: var(--border-radius-sm); margin-bottom: 16px;">
+                        <span id="task-created-date" style="display: block; margin-bottom: 4px;"></span>
+                        <span id="task-in-progress-date" style="display: block; margin-bottom: 4px;"></span>
+                        <span id="task-completed-date" style="display: block;"></span>
+                    </div>
+
+                    <!-- Daily Remarks (visible only when editing in-progress tasks) -->
+                    <div id="remarks-section" style="display: none; margin-top: 16px;">
+                        <h4 style="font-size: 0.95rem; margin-bottom: 12px; color: var(--text-primary);">
+                            <i class="fa-solid fa-comment-dots"></i> Daily Remarks
+                        </h4>
+                        <div id="remarks-list"
+                            style="max-height: 180px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; margin-bottom: 12px; padding: 8px; background: var(--bg-main); border-radius: var(--border-radius-sm); border: 1px solid var(--border-color);">
+                            <p style="color: var(--text-secondary); font-size: 0.85rem; text-align: center;">No remarks
+                                yet.</p>
+                        </div>
+                        <div style="display: flex; gap: 8px;">
+                            <input type="text" id="remark-input" placeholder="Add a remark for today..."
+                                style="flex: 1; padding: 8px 12px; border: 1px solid var(--border-color); border-radius: var(--border-radius-sm); font-family: 'Inter', sans-serif; font-size: 0.85rem;">
+                            <button type="button" id="add-remark-btn" class="primary-btn"
+                                style="padding: 8px 16px; font-size: 0.85rem; white-space: nowrap;">Add</button>
+                        </div>
+                    </div>
+
+                    <!-- Task Activity Log (visible only when editing) -->
+                    <div id="activity-log-section" style="display: none; margin-top: 16px;">
+                        <h4 style="font-size: 0.95rem; margin-bottom: 12px; color: var(--text-primary);">
+                            <i class="fa-solid fa-clock-rotate-left"></i> Activity Log
+                        </h4>
+                        <div id="activity-log-list"
+                            style="max-height: 200px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; padding: 8px; background: var(--bg-main); border-radius: var(--border-radius-sm); border: 1px solid var(--border-color);">
+                            <p style="color: var(--text-secondary); font-size: 0.85rem; text-align: center;">No activity
+                                yet.</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="secondary-btn" id="cancel-task">Cancel</button>
+                    <button type="submit" class="primary-btn">Create Task</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Removed Manage Team Modal -->
+
+
+    <script src="chat-widget.js?v=1"></script>
+    <script src="script.js?v=13"></script>
+    <script>
+        // Force hide Create Task button for employees immediately
+        const userStr = localStorage.getItem('nexboard_currentUser');
+        if (userStr) {
+            const user = JSON.parse(userStr);
+            if (user.role === 'employee') {
+                const btn = document.getElementById('add-task-btn');
+                if (btn) btn.style.display = 'none';
+            }
+        }
+    </script>
+    <script src="profile.js?v=1"></script>
+    <script src="theme.js"></script>
+</body>
+
+</html>
