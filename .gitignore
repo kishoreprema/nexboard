@@ -1,7 +1,5 @@
 node_modules/
+.env
+.vercel/
 database.sqlite
-nexboard.db
-sqlitebrowser/
-sqlitebrowser.zip
-.DS_Store
-*.log
+backup/

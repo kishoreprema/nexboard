@@ -1,9 +1,12 @@
 const express = require('express');
-const sqlite3 = require('sqlite3').verbose();
+const { Pool } = require('pg');
+const dotenv = require('dotenv');
 const cors = require('cors');
 const nodemailer = require('nodemailer');
 const path = require('path');
 const fs = require('fs');
+
+dotenv.config();
 
 // Gmail SMTP Transport
 const mailTransporter = nodemailer.createTransport({
@@ -49,155 +52,116 @@ app.use(express.static(path.join(__dirname, 'public')));
 console.log('__dirname:', __dirname);
 console.log('process.cwd():', process.cwd());
 
-// Initialize SQLite Database
-const isVercel = process.env.VERCEL === '1';
-const dbPath = isVercel
-    ? path.join('/tmp', 'database.sqlite')
-    : path.join(process.cwd(), 'database.sqlite');
+// Initialize PostgreSQL Database Pool
+const pool = new Pool({
+    connectionString: process.env.DATABASE_URL,
+    ssl: { rejectUnauthorized: false }
+});
 
-// If on Vercel, we might need to copy the initial database if it doesn't exist in /tmp
-if (isVercel && !fs.existsSync(dbPath)) {
-    const sourcePath = path.join(process.cwd(), 'database.sqlite');
-    if (fs.existsSync(sourcePath)) {
-        try {
-            fs.copyFileSync(sourcePath, dbPath);
-            console.log('Database copied to /tmp from', sourcePath);
-        } catch (err) {
-            console.error('Error copying database to /tmp:', err.message);
+async function initDB() {
+    try {
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS users (
+                id VARCHAR(255) PRIMARY KEY,
+                name VARCHAR(255) NOT NULL,
+                email VARCHAR(255),
+                phone VARCHAR(50),
+                initials VARCHAR(10),
+                color VARCHAR(50),
+                password VARCHAR(255) NOT NULL,
+                role VARCHAR(50) NOT NULL,
+                avatarUrl TEXT,
+                status VARCHAR(50) DEFAULT 'available'
+            );
+
+            CREATE TABLE IF NOT EXISTS projects (
+                id VARCHAR(255) PRIMARY KEY,
+                name VARCHAR(255) NOT NULL,
+                "desc" TEXT,
+                taskCount INTEGER DEFAULT 0,
+                managerId VARCHAR(255)
+            );
+
+            CREATE TABLE IF NOT EXISTS project_users (
+                projectId VARCHAR(255),
+                userId VARCHAR(255),
+                PRIMARY KEY (projectId, userId)
+            );
+
+            CREATE TABLE IF NOT EXISTS tasks (
+                id VARCHAR(255) PRIMARY KEY,
+                title VARCHAR(255) NOT NULL,
+                "desc" TEXT,
+                status VARCHAR(50) NOT NULL,
+                priority VARCHAR(50) NOT NULL,
+                type VARCHAR(50) NOT NULL,
+                assigneeId VARCHAR(255),
+                projectId VARCHAR(255) NOT NULL,
+                createdAt VARCHAR(255),
+                completedAt VARCHAR(255),
+                inProgressAt VARCHAR(255),
+                startDate VARCHAR(255),
+                endDate VARCHAR(255)
+            );
+
+            CREATE TABLE IF NOT EXISTS task_remarks (
+                id SERIAL PRIMARY KEY,
+                taskId VARCHAR(255) NOT NULL,
+                userId VARCHAR(255) NOT NULL,
+                remark TEXT NOT NULL,
+                remarkDate VARCHAR(255) NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS messages (
+                id SERIAL PRIMARY KEY,
+                projectId VARCHAR(255) NOT NULL,
+                userId VARCHAR(255) NOT NULL,
+                message TEXT NOT NULL,
+                mentionedUserId VARCHAR(255),
+                createdAt VARCHAR(255) NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS task_activity (
+                id SERIAL PRIMARY KEY,
+                taskId VARCHAR(255) NOT NULL,
+                userId VARCHAR(255),
+                action VARCHAR(255) NOT NULL,
+                details TEXT,
+                createdAt VARCHAR(255) NOT NULL
+            );
+        `);
+        console.log('Connected to the PostgreSQL database and tables verified.');
+
+        // Seed initial users
+        const usersResult = await pool.query('SELECT COUNT(*) FROM users');
+        if (parseInt(usersResult.rows[0].count) === 0) {
+            await pool.query(
+                `INSERT INTO users (id, name, initials, color, password, role) VALUES ($1, $2, $3, $4, $5, $6)`,
+                ['admin-1', 'System Admin', 'SA', '#DE350B', 'admin123', 'admin']
+            );
+            await pool.query(
+                `INSERT INTO users (id, name, initials, color, password, role) VALUES ($1, $2, $3, $4, $5, $6)`,
+                ['pm-1', 'Project Manager', 'PM', '#0052CC', 'pm123', 'pm']
+            );
+            await pool.query(
+                `INSERT INTO users (id, name, initials, color, password, role) VALUES ($1, $2, $3, $4, $5, $6)`,
+                ['emp-1', 'Employee One', 'E1', '#00875A', 'emp123', 'employee']
+            );
+            console.log('Inserted default users');
         }
-    } else {
-        console.error('Initial database not found at', sourcePath);
+
+        // Seed Global Chat project
+        const globalProjResult = await pool.query("SELECT COUNT(*) FROM projects WHERE id = 'global'");
+        if (parseInt(globalProjResult.rows[0].count) === 0) {
+            await pool.query("INSERT INTO projects (id, name, \"desc\") VALUES ('global', 'Global Chat', 'A shared room for everyone to communicate.')");
+        }
+    } catch (err) {
+        console.error('Error initializing database schema', err);
     }
 }
 
-console.log(`Using database at: ${dbPath}`);
-
-const db = new sqlite3.Database(dbPath, (err) => {
-    if (err) {
-        console.error('Error opening database', err.message);
-    } else {
-        console.log('Connected to the SQLite database.');
-
-        // Create tables
-        db.serialize(() => {
-            // Users table
-            db.run(`CREATE TABLE IF NOT EXISTS users (
-                id TEXT PRIMARY KEY,
-                name TEXT NOT NULL,
-                email TEXT,
-                phone TEXT,
-                initials TEXT,
-                color TEXT,
-                password TEXT NOT NULL,
-                role TEXT NOT NULL, -- 'admin', 'pm', 'employee'
-                avatarUrl TEXT,
-                status TEXT DEFAULT 'available'
-            )`);
-
-            // Projects table
-            db.run(`CREATE TABLE IF NOT EXISTS projects (
-                id TEXT PRIMARY KEY,
-                name TEXT NOT NULL,
-                desc TEXT,
-                taskCount INTEGER DEFAULT 0,
-                managerId TEXT -- ID of the PM who created it
-            )`);
-
-            // Project Users (Many-to-Many allocation)
-            db.run(`CREATE TABLE IF NOT EXISTS project_users (
-                projectId TEXT,
-                userId TEXT,
-                PRIMARY KEY (projectId, userId)
-            )`);
-
-            // Tasks table
-            db.run(`CREATE TABLE IF NOT EXISTS tasks (
-                id TEXT PRIMARY KEY,
-                title TEXT NOT NULL,
-                desc TEXT,
-                status TEXT NOT NULL,
-                priority TEXT NOT NULL,
-                type TEXT NOT NULL,
-                assigneeId TEXT,
-                projectId TEXT NOT NULL,
-                createdAt TEXT,
-                completedAt TEXT,
-                inProgressAt TEXT,
-                startDate TEXT,
-                endDate TEXT
-            )`);
-
-            // Task Remarks table
-            db.run(`CREATE TABLE IF NOT EXISTS task_remarks (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                taskId TEXT NOT NULL,
-                userId TEXT NOT NULL,
-                remark TEXT NOT NULL,
-                remarkDate TEXT NOT NULL
-            )`);
-
-            // Messages table (Project Chat)
-            db.run(`CREATE TABLE IF NOT EXISTS messages (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                projectId TEXT NOT NULL,
-                userId TEXT NOT NULL,
-                message TEXT NOT NULL,
-                mentionedUserId TEXT,
-                createdAt TEXT NOT NULL
-            )`);
-
-            // Task Activity Log table
-            db.run(`CREATE TABLE IF NOT EXISTS task_activity (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                taskId TEXT NOT NULL,
-                userId TEXT,
-                action TEXT NOT NULL,
-                details TEXT,
-                createdAt TEXT NOT NULL
-            )`);
-
-            // The ALTER TABLE statements below are for adding columns to an existing database.
-            // For a fresh database, the above CREATE TABLE statement is sufficient.
-            // If you're running this on an existing database, you might need to run these manually once.
-            db.run(`ALTER TABLE tasks ADD COLUMN createdAt TEXT`, () => { });
-            db.run(`ALTER TABLE tasks ADD COLUMN completedAt TEXT`, () => { });
-            db.run(`ALTER TABLE tasks ADD COLUMN inProgressAt TEXT`, () => { });
-
-            db.run(`ALTER TABLE users ADD COLUMN avatarUrl TEXT`, () => { });
-            db.run(`ALTER TABLE users ADD COLUMN status TEXT DEFAULT 'available'`, () => { });
-
-            db.run(`ALTER TABLE tasks ADD COLUMN startDate TEXT`, () => { });
-            db.run(`ALTER TABLE tasks ADD COLUMN endDate TEXT`, () => { });
-
-            // Add managerId to projects if it doesn't exist
-            db.run(`ALTER TABLE projects ADD COLUMN managerId TEXT`, () => { });
-
-
-            console.log('Database tables created or already exist.');
-
-            // Seed initial users
-            db.get("SELECT COUNT(*) as count FROM users", (err, row) => {
-                if (row.count === 0) {
-                    const stmt = db.prepare("INSERT INTO users (id, name, initials, color, password, role) VALUES (?, ?, ?, ?, ?, ?)");
-                    // Default Admin
-                    stmt.run('admin-1', 'System Admin', 'SA', '#DE350B', 'admin123', 'admin');
-                    // Default PM
-                    stmt.run('pm-1', 'Project Manager', 'PM', '#0052CC', 'pm123', 'pm');
-                    // Default Employee
-                    stmt.run('emp-1', 'Employee One', 'E1', '#00875A', 'emp123', 'employee');
-                    stmt.finalize();
-                }
-            });
-
-            // Seed Global Chat project
-            db.get("SELECT COUNT(*) as count FROM projects WHERE id = 'global'", (err, row) => {
-                if (row && row.count === 0) {
-                    db.run("INSERT INTO projects (id, name, desc) VALUES ('global', 'Global Chat', 'A shared room for everyone to communicate.')");
-                }
-            });
-        });
-    }
-});
+// Call on startup
+initDB();
 
 // DEBUG
 app.get('/api/debug', (req, res) => {
@@ -205,68 +169,76 @@ app.get('/api/debug', (req, res) => {
 });
 
 // AUTHENTICATION
-app.post('/api/login', (req, res) => {
+app.post('/api/login', async (req, res) => {
     const { username, password } = req.body;
-    // Allow login by id, name or email
-    db.get(`SELECT id, name, email, phone, initials, color, role, avatarUrl, status FROM users WHERE (id = ? OR name = ? OR email = ?) AND password = ?`, [username, username, username, password], (err, row) => {
-        if (err) return res.status(500).json({ error: err.message });
-        if (!row) return res.status(401).json({ error: 'Invalid credentials' });
-        res.json(row);
-    });
+    try {
+        const result = await pool.query(
+            `SELECT id, name, email, phone, initials, color, role, avatarurl, status FROM users WHERE (id = $1 OR name = $2 OR email = $3) AND password = $4`,
+            [username, username, username, password]
+        );
+        if (result.rows.length === 0) return res.status(401).json({ error: 'Invalid credentials' });
+        res.json(result.rows[0]);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
 });
 
 // USERS
-app.get('/api/users', (req, res) => {
+app.get('/api/users', async (req, res) => {
     // For simplicity, we return all users without password. In a real app, PMs might only see certain users, but seeing everyone is fine for this demo.
-    db.all("SELECT id, name, email, phone, initials, color, role, avatarUrl, status FROM users", [], (err, rows) => {
-        if (err) return res.status(500).json({ error: err.message });
-        res.json(rows);
-    });
+    try {
+        const result = await pool.query("SELECT id, name, email, phone, initials, color, role, avatarUrl, status FROM users");
+        res.json(result.rows);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
 });
 
-app.post('/api/users', (req, res) => {
+app.post('/api/users', async (req, res) => {
     console.log("POST /api/users body:", req.body);
     const { id, name, email, phone, initials, color, password, role } = req.body;
     // Basic validation could happen here
-    db.run(`INSERT INTO users (id, name, email, phone, initials, color, password, role) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-        [id, name, email, phone, initials, color, password, role],
-        function (err) {
-            if (err) {
-                if (err.message.includes('UNIQUE constraint')) return res.status(400).json({ error: 'Username already exists (names must be unique in this prototype).' });
-                return res.status(500).json({ error: err.message });
-            }
-            res.json({ id, name, email, phone, initials, color, role });
-        });
+    try {
+        await pool.query(`INSERT INTO users (id, name, email, phone, initials, color, password, role) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`, [id, name, email, phone, initials, color, password, role]);
+        res.json({ id, name, email, phone, initials, color, role });
+    } catch (err) {
+        if (err.message.includes('unique constraint') || err.message.includes('duplicate key')) {
+            return res.status(400).json({ error: 'Username already exists (names must be unique in this prototype).' });
+        }
+        return res.status(500).json({ error: err.message });
+    }
 });
 
-app.delete('/api/users/:id', (req, res) => {
-    db.run("DELETE FROM users WHERE id = ?", req.params.id, function (err) {
-        if (err) return res.status(500).json({ error: err.message });
-        // Also cleanup their allocations
-        db.run("DELETE FROM project_users WHERE userId = ?", req.params.id);
-        res.json({ message: "deleted", changes: this.changes });
-    });
+app.delete('/api/users/:id', async (req, res) => {
+    try {
+        const result = await pool.query("DELETE FROM users WHERE id = $1", [req.params.id]);
+        await pool.query("DELETE FROM project_users WHERE userId = $1", [req.params.id]);
+        res.json({ message: "deleted", changes: result.rowCount });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
 });
 
-app.put('/api/users/:id', (req, res) => {
+app.put('/api/users/:id', async (req, res) => {
     const { name, email, phone, role } = req.body;
-    db.run(`UPDATE users SET name = ?, email = ?, phone = ?, role = ? WHERE id = ?`,
-        [name, email, phone, role, req.params.id],
-        function (err) {
-            if (err) return res.status(500).json({ error: err.message });
-            res.json({ message: "updated", changes: this.changes });
-        });
+    try {
+        const result = await pool.query(`UPDATE users SET name = $1, email = $2, phone = $3, role = $4 WHERE id = $5`, [name, email, phone, role, req.params.id]);
+        res.json({ message: "updated", changes: result.rowCount });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
 });
 
-app.put('/api/users/:id/profile', (req, res) => {
+app.put('/api/users/:id/profile', async (req, res) => {
     const { avatarUrl, currentPassword, newPassword } = req.body;
     const userId = req.params.id;
 
-    db.get(`SELECT password, id, name, email, phone, initials, color, role, avatarUrl FROM users WHERE id = ?`, [userId], (err, user) => {
-        if (err) return res.status(500).json({ error: err.message });
-        if (!user) return res.status(404).json({ error: 'User not found' });
+    try {
+        const userRes = await pool.query(`SELECT password, id, name, email, phone, initials, color, role, avatarUrl, status FROM users WHERE id = $1`, [userId]);
+        if (userRes.rows.length === 0) return res.status(404).json({ error: 'User not found' });
 
-        let finalAvatar = avatarUrl !== undefined ? avatarUrl : user.avatarUrl;
+        const user = userRes.rows[0];
+        let finalAvatar = avatarUrl !== undefined ? avatarUrl : user.avatarurl;
         let finalPassword = user.password;
 
         if (currentPassword && newPassword) {
@@ -276,180 +248,192 @@ app.put('/api/users/:id/profile', (req, res) => {
             finalPassword = newPassword;
         }
 
-        db.run(`UPDATE users SET avatarUrl = ?, password = ? WHERE id = ?`,
-            [finalAvatar, finalPassword, userId],
-            function (err2) {
-                if (err2) return res.status(500).json({ error: err2.message });
-                res.json({
-                    id: user.id, name: user.name, email: user.email, phone: user.phone,
-                    initials: user.initials, color: user.color, role: user.role, avatarUrl: finalAvatar, status: user.status
-                });
-            });
-    });
-});
-
-app.put('/api/users/:id/status', (req, res) => {
-    const { status } = req.body;
-    db.run("UPDATE users SET status = ? WHERE id = ?", [status, req.params.id], function (err) {
-        if (err) return res.status(500).json({ error: err.message });
-        res.json({ message: "status updated" });
-    });
-});
-
-// PROJECTS
-app.get('/api/projects', (req, res) => {
-    const { userId, role } = req.query;
-
-    if (role === 'admin') {
-        // Admin sees all
-        db.all("SELECT * FROM projects", [], (err, rows) => {
-            if (err) return res.status(500).json({ error: err.message });
-            res.json(rows);
+        await pool.query(
+            `UPDATE users SET avatarUrl = $1, password = $2 WHERE id = $3`,
+            [finalAvatar, finalPassword, userId]
+        );
+        res.json({
+            id: user.id, name: user.name, email: user.email, phone: user.phone,
+            initials: user.initials, color: user.color, role: user.role, avatarUrl: finalAvatar, status: user.status
         });
-    } else if (role === 'pm' && userId) {
-        // PM sees projects they manage OR are allocated to
-        db.all(`
-            SELECT DISTINCT p.* 
-            FROM projects p 
-            LEFT JOIN project_users pu ON p.id = pu.projectId 
-            WHERE p.managerId = ? OR pu.userId = ?
-        `, [userId, userId], (err, rows) => {
-            if (err) return res.status(500).json({ error: err.message });
-            res.json(rows);
-        });
-    } else if (userId) {
-        // Employees only see allocated projects
-        db.all(`
-            SELECT p.* 
-            FROM projects p 
-            JOIN project_users pu ON p.id = pu.projectId 
-            WHERE pu.userId = ?
-        `, [userId], (err, rows) => {
-            if (err) return res.status(500).json({ error: err.message });
-            res.json(rows);
-        });
-    } else {
-        res.status(400).json({ error: "Must provide userId and role" });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
     }
 });
 
-app.post('/api/projects', (req, res) => {
+app.put('/api/users/:id/status', async (req, res) => {
+    const { status } = req.body;
+    try {
+        await pool.query("UPDATE users SET status = $1 WHERE id = $2", [status, req.params.id]);
+        res.json({ message: "status updated" });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// PROJECTS
+app.get('/api/projects', async (req, res) => {
+    const { userId, role } = req.query;
+
+    try {
+        if (role === 'admin') {
+            // Admin sees all
+            const result = await pool.query("SELECT * FROM projects");
+            res.json(result.rows);
+        } else if (role === 'pm' && userId) {
+            // PM sees projects they manage OR are allocated to
+            const result = await pool.query(`
+                SELECT DISTINCT p.* 
+                FROM projects p 
+                LEFT JOIN project_users pu ON p.id = pu.projectId 
+                WHERE p.managerId = $1 OR pu.userId = $2
+            `, [userId, userId]);
+            res.json(result.rows);
+        } else if (userId) {
+            // Employees only see allocated projects
+            const result = await pool.query(`
+                SELECT p.* 
+                FROM projects p 
+                JOIN project_users pu ON p.id = pu.projectId 
+                WHERE pu.userId = $1
+            `, [userId]);
+            res.json(result.rows);
+        } else {
+            res.status(400).json({ error: "Must provide userId and role" });
+        }
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.post('/api/projects', async (req, res) => {
     const { id, name, desc, taskCount, managerId } = req.body;
-    db.run(`INSERT INTO projects (id, name, desc, taskCount, managerId) VALUES (?, ?, ?, ?, ?)`,
-        [id, name, desc, taskCount || 0, managerId],
-        function (err) {
-            if (err) {
-                console.error("Failed to insert project:", err.message);
-                return res.status(500).json({ error: err.message });
+    try {
+        await pool.query(
+            `INSERT INTO projects (id, name, "desc", taskCount, managerId) VALUES ($1, $2, $3, $4, $5)`,
+            [id, name, desc, taskCount || 0, managerId]
+        );
+
+        // Auto-allocate the manager to their own project
+        if (managerId) {
+            try {
+                await pool.query(`INSERT INTO project_users (projectId, userId) VALUES ($1, $2)`, [id, managerId]);
+            } catch (err2) {
+                console.error("Failed to auto-allocate manager:", err2.message);
             }
 
-            // Auto-allocate the manager to their own project
-            if (managerId) {
-                db.run(`INSERT INTO project_users (projectId, userId) VALUES (?, ?)`, [id, managerId], function (err2) {
-                    if (err2) console.error("Failed to auto-allocate manager:", err2.message);
-                });
-
-                // Email notification to PM
-                notifyUserByEmail(managerId,
-                    `🚀 New Project Assigned: ${name}`,
-                    `<div style="font-family:Inter,sans-serif;max-width:500px;margin:auto;border:1px solid #e0e0e0;border-radius:8px;overflow:hidden">
-                        <div style="background:#00875A;color:white;padding:16px 20px"><h2 style="margin:0;font-size:18px">New Project Assigned</h2></div>
-                        <div style="padding:20px">
-                            <h3 style="margin:0 0 8px">${name}</h3>
-                            ${desc ? `<p style="color:#666;margin:0 0 12px">${desc}</p>` : ''}
-                            <p style="margin:16px 0 0;font-size:13px;color:#999">You have been assigned as the Project Manager. — NexBoard</p>
-                        </div>
-                    </div>`
-                );
-            }
-            res.json({ id, name, desc, taskCount, managerId });
-        });
+            // Email notification to PM
+            notifyUserByEmail(managerId,
+                `🚀 New Project Assigned: ${name}`,
+                `<div style="font-family:Inter,sans-serif;max-width:500px;margin:auto;border:1px solid #e0e0e0;border-radius:8px;overflow:hidden">
+                    <div style="background:#00875A;color:white;padding:16px 20px"><h2 style="margin:0;font-size:18px">New Project Assigned</h2></div>
+                    <div style="padding:20px">
+                        <h3 style="margin:0 0 8px">${name}</h3>
+                        ${desc ? `<p style="color:#666;margin:0 0 12px">${desc}</p>` : ''}
+                        <p style="margin:16px 0 0;font-size:13px;color:#999">You have been assigned as the Project Manager. — NexBoard</p>
+                    </div>
+                </div>`
+            );
+        }
+        res.json({ id, name, desc, taskCount, managerId });
+    } catch (err) {
+        console.error("Failed to insert project:", err.message);
+        res.status(500).json({ error: err.message });
+    }
 });
 
-app.delete('/api/projects/:id', (req, res) => {
-    db.run("DELETE FROM projects WHERE id = ?", req.params.id, function (err) {
-        if (err) return res.status(500).json({ error: err.message });
-        db.run("DELETE FROM project_users WHERE projectId = ?", req.params.id);
-        db.run("DELETE FROM tasks WHERE projectId = ?", req.params.id);
-        res.json({ message: "deleted", changes: this.changes });
-    });
+app.delete('/api/projects/:id', async (req, res) => {
+    try {
+        const result = await pool.query("DELETE FROM projects WHERE id = $1", [req.params.id]);
+        await pool.query("DELETE FROM project_users WHERE projectId = $1", [req.params.id]);
+        await pool.query("DELETE FROM tasks WHERE projectId = $1", [req.params.id]);
+        res.json({ message: "deleted", changes: result.rowCount });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
 });
 
-app.put('/api/projects/:id', (req, res) => {
+app.put('/api/projects/:id', async (req, res) => {
     const { name, desc, managerId } = req.body;
-    db.run(`UPDATE projects SET name = ?, desc = ?, managerId = ? WHERE id = ?`,
-        [name, desc, managerId || null, req.params.id],
-        function (err) {
-            if (err) return res.status(500).json({ error: err.message });
-            res.json({ message: "updated", changes: this.changes });
-        });
+    try {
+        const result = await pool.query(
+            `UPDATE projects SET name = $1, "desc" = $2, managerId = $3 WHERE id = $4`,
+            [name, desc, managerId || null, req.params.id]
+        );
+        res.json({ message: "updated", changes: result.rowCount });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
 });
 
 // PROJECT ALLOCATIONS
-app.get('/api/projects/:id/users', (req, res) => {
-    db.all(`
-        SELECT u.id, u.name, u.initials, u.color, u.role
-        FROM users u 
-        JOIN project_users pu ON u.id = pu.userId 
-        WHERE pu.projectId = ?
-    `, [req.params.id], (err, rows) => {
-        if (err) return res.status(500).json({ error: err.message });
-        res.json(rows);
-    });
+app.get('/api/projects/:id/users', async (req, res) => {
+    try {
+        const result = await pool.query(`
+            SELECT u.id, u.name, u.initials, u.color, u.role
+            FROM users u 
+            JOIN project_users pu ON u.id = pu.userId 
+            WHERE pu.projectId = $1
+        `, [req.params.id]);
+        res.json(result.rows);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
 });
 
-app.post('/api/projects/:id/users', (req, res) => {
+app.post('/api/projects/:id/users', async (req, res) => {
     const { userId } = req.body;
-    db.run(`INSERT INTO project_users (projectId, userId) VALUES (?, ?)`,
-        [req.params.id, userId],
-        function (err) {
-            if (err) return res.status(500).json({ error: err.message });
-            res.json({ message: "allocated" });
-        });
+    try {
+        await pool.query(`INSERT INTO project_users (projectId, userId) VALUES ($1, $2)`, [req.params.id, userId]);
+        res.json({ message: "allocated" });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
 });
 
-app.delete('/api/projects/:projectId/users/:userId', (req, res) => {
-    db.run(`DELETE FROM project_users WHERE projectId = ? AND userId = ?`,
-        [req.params.projectId, req.params.userId],
-        function (err) {
-            if (err) return res.status(500).json({ error: err.message });
-            res.json({ message: "deallocated", changes: this.changes });
-        });
+app.delete('/api/projects/:projectId/users/:userId', async (req, res) => {
+    try {
+        const result = await pool.query(`DELETE FROM project_users WHERE projectId = $1 AND userId = $2`, [req.params.projectId, req.params.userId]);
+        res.json({ message: "deallocated", changes: result.rowCount });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
 });
 
 // PROJECT EXPORT
-app.get('/api/projects/:id/export', (req, res) => {
+app.get('/api/projects/:id/export', async (req, res) => {
     const projectId = req.params.id;
 
     // Complex query to get project details, task details, assignee details, PM details, and work done (remarks)
     const query = `
         SELECT 
-            p.name as ProjectName,
-            pm.name as ProjectManager,
-            t.id as TaskId,
-            t.title as TaskTitle,
-            t.desc as TaskDescription,
-            t.status as Status,
-            t.priority as Priority,
-            t.type as TaskType,
-            a.name as Assignee,
-            t.createdAt as CreatedAt,
-            t.inProgressAt as StartedAt,
-            t.completedAt as CompletedAt,
-            GROUP_CONCAT(ru.name || ' (' || r.remarkDate || '): ' || r.remark, CHAR(10)) as WorkDone
+            p.name as "ProjectName",
+            pm.name as "ProjectManager",
+            t.id as "TaskId",
+            t.title as "TaskTitle",
+            t."desc" as "TaskDescription",
+            t.status as "Status",
+            t.priority as "Priority",
+            t.type as "TaskType",
+            a.name as "Assignee",
+            t.createdAt as "CreatedAt",
+            t.inProgressAt as "StartedAt",
+            t.completedAt as "CompletedAt",
+            STRING_AGG(ru.name || ' (' || r.remarkDate || '): ' || r.remark, CHR(10)) as "WorkDone"
         FROM projects p
         LEFT JOIN users pm ON p.managerId = pm.id
         LEFT JOIN tasks t ON p.id = t.projectId
         LEFT JOIN users a ON t.assigneeId = a.id
         LEFT JOIN task_remarks r ON t.id = r.taskId
         LEFT JOIN users ru ON r.userId = ru.id
-        WHERE p.id = ?
-        GROUP BY t.id
+        WHERE p.id = $1
+        GROUP BY p.name, pm.name, t.id, t.title, t."desc", t.status, t.priority, t.type, a.name, t.createdAt, t.inProgressAt, t.completedAt
         ORDER BY t.createdAt DESC
     `;
 
-    db.all(query, [projectId], (err, rows) => {
-        if (err) return res.status(500).json({ error: err.message });
+    try {
+        const result = await pool.query(query, [projectId]);
+        const rows = result.rows;
 
         if (!rows || rows.length === 0) {
             return res.status(404).send("Project not found or has no data.");
@@ -490,54 +474,56 @@ app.get('/api/projects/:id/export', (req, res) => {
         res.setHeader('Content-Type', 'text/csv');
         res.setHeader('Content-Disposition', `attachment; filename="project-${projectId}-export.csv"`);
         res.status(200).send(csvContent);
-    });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
 });
 
 // TASKS
-app.get('/api/tasks', (req, res) => {
+app.get('/api/tasks', async (req, res) => {
     const { projectId, role, userId } = req.query;
 
-    // Admins can fetch all tasks globally for the dashboard chart
-    if (role === 'admin' && !projectId) {
-        db.all("SELECT * FROM tasks", [], (err, rows) => {
-            if (err) return res.status(500).json({ error: err.message });
-            res.json(rows);
-        });
-        return;
-    }
+    try {
+        // Admins can fetch all tasks globally for the dashboard chart
+        if (role === 'admin' && !projectId) {
+            const result = await pool.query("SELECT * FROM tasks");
+            res.json(result.rows);
+            return;
+        }
 
-    // PM: get tasks from projects they manage
-    if (role === 'pm' && userId && !projectId) {
-        db.all(`SELECT t.* FROM tasks t
+        // PM: get tasks from projects they manage
+        if (role === 'pm' && userId && !projectId) {
+            const result = await pool.query(`
+                SELECT t.* FROM tasks t
                 JOIN projects p ON t.projectId = p.id
-                WHERE p.managerId = ?`, [userId], (err, rows) => {
-            if (err) return res.status(500).json({ error: err.message });
-            res.json(rows || []);
-        });
-        return;
-    }
+                WHERE p.managerId = $1
+            `, [userId]);
+            res.json(result.rows || []);
+            return;
+        }
 
-    // Employee: get tasks from projects they are allocated to
-    if (role === 'employee' && userId && !projectId) {
-        db.all(`SELECT t.* FROM tasks t
+        // Employee: get tasks from projects they are allocated to
+        if (role === 'employee' && userId && !projectId) {
+            const result = await pool.query(`
+                SELECT t.* FROM tasks t
                 WHERE t.projectId IN (
-                    SELECT pu.projectId FROM project_users pu WHERE pu.userId = ?
-                )`, [userId], (err, rows) => {
-            if (err) return res.status(500).json({ error: err.message });
-            res.json(rows || []);
-        });
-        return;
+                    SELECT pu.projectId FROM project_users pu WHERE pu.userId = $1
+                )
+            `, [userId]);
+            res.json(result.rows || []);
+            return;
+        }
+
+        if (!projectId) return res.status(400).json({ error: "projectId required" });
+
+        const result = await pool.query("SELECT * FROM tasks WHERE projectId = $1", [projectId]);
+        res.json(result.rows);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
     }
-
-    if (!projectId) return res.status(400).json({ error: "projectId required" });
-
-    db.all("SELECT * FROM tasks WHERE projectId = ?", [projectId], (err, rows) => {
-        if (err) return res.status(500).json({ error: err.message });
-        res.json(rows);
-    });
 });
 
-app.post('/api/tasks', (req, res) => {
+app.post('/api/tasks', async (req, res) => {
     const { id, title, desc, status, priority, type, assigneeId, projectId, startDate, endDate } = req.body;
     const createdAt = new Date().toISOString();
     let completedAt = null;
@@ -548,67 +534,69 @@ app.post('/api/tasks', (req, res) => {
         inProgressAt = new Date().toISOString();
     }
 
-    db.run(`INSERT INTO tasks (id, title, desc, status, priority, type, assigneeId, projectId, createdAt, completedAt, inProgressAt, startDate, endDate) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [id, title, desc, status, priority, type, assigneeId, projectId, createdAt, completedAt, inProgressAt, startDate || null, endDate || null],
-        function (err) {
-            if (err) {
-                console.error("Failed to insert task:", err.message);
-                return res.status(500).json({ error: err.message });
-            }
-            // Update project task count
-            db.run(`UPDATE projects SET taskCount = taskCount + 1 WHERE id = ?`, [projectId]);
+    try {
+        await pool.query(
+            `INSERT INTO tasks (id, title, "desc", status, priority, type, assigneeId, projectId, createdAt, completedAt, inProgressAt, startDate, endDate) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
+            [id, title, desc, status, priority, type, assigneeId, projectId, createdAt, completedAt, inProgressAt, startDate || null, endDate || null]
+        );
 
-            // Log activity
-            logTaskActivity(id, req.body.createdByUserId || null, 'created', `Task "${title}" created with status ${status}, priority ${priority}`);
-            if (assigneeId) {
-                const assignee = null; // will be resolved in email block
-                logTaskActivity(id, req.body.createdByUserId || null, 'assigned', `Task assigned`);
-            }
+        // Update project task count
+        await pool.query(`UPDATE projects SET taskCount = taskCount + 1 WHERE id = $1`, [projectId]);
 
-            // Email notification to assignee
-            if (assigneeId) {
-                db.get("SELECT name FROM projects WHERE id = ?", [projectId], (e, proj) => {
-                    const projName = proj ? proj.name : projectId;
-                    notifyUserByEmail(assigneeId,
-                        `📋 New Task Assigned: ${title}`,
-                        `<div style="font-family:Inter,sans-serif;max-width:500px;margin:auto;border:1px solid #e0e0e0;border-radius:8px;overflow:hidden">
-                            <div style="background:#0052CC;color:white;padding:16px 20px"><h2 style="margin:0;font-size:18px">New Task Assigned</h2></div>
-                            <div style="padding:20px">
-                                <h3 style="margin:0 0 8px">${title}</h3>
-                                ${desc ? `<p style="color:#666;margin:0 0 12px">${desc}</p>` : ''}
-                                <table style="font-size:14px;color:#333;width:100%">
-                                    <tr><td style="padding:4px 0"><strong>Project:</strong></td><td>${projName}</td></tr>
-                                    <tr><td style="padding:4px 0"><strong>Priority:</strong></td><td>${priority}</td></tr>
-                                    <tr><td style="padding:4px 0"><strong>Type:</strong></td><td>${type}</td></tr>
-                                    ${startDate ? `<tr><td style="padding:4px 0"><strong>Start:</strong></td><td>${startDate}</td></tr>` : ''}
-                                    ${endDate ? `<tr><td style="padding:4px 0"><strong>Due:</strong></td><td>${endDate}</td></tr>` : ''}
-                                </table>
-                                <p style="margin:16px 0 0;font-size:13px;color:#999">— NexBoard</p>
-                            </div>
-                        </div>`
-                    );
-                });
-            }
+        // Log activity
+        logTaskActivity(id, req.body.createdByUserId || null, 'created', `Task "${title}" created with status ${status}, priority ${priority}`);
+        if (assigneeId) {
+            logTaskActivity(id, req.body.createdByUserId || null, 'assigned', `Task assigned`);
+        }
 
-            res.json({ id, title, desc, status, priority, type, assigneeId, projectId, createdAt, completedAt, inProgressAt, startDate: startDate || null, endDate: endDate || null });
-        });
+        // Email notification to assignee
+        if (assigneeId) {
+            try {
+                const projRes = await pool.query("SELECT name FROM projects WHERE id = $1", [projectId]);
+                const projName = projRes.rows[0] ? projRes.rows[0].name : projectId;
+                notifyUserByEmail(assigneeId,
+                    `📋 New Task Assigned: ${title}`,
+                    `<div style="font-family:Inter,sans-serif;max-width:500px;margin:auto;border:1px solid #e0e0e0;border-radius:8px;overflow:hidden">
+                        <div style="background:#0052CC;color:white;padding:16px 20px"><h2 style="margin:0;font-size:18px">New Task Assigned</h2></div>
+                        <div style="padding:20px">
+                            <h3 style="margin:0 0 8px">${title}</h3>
+                            ${desc ? `<p style="color:#666;margin:0 0 12px">${desc}</p>` : ''}
+                            <table style="font-size:14px;color:#333;width:100%">
+                                <tr><td style="padding:4px 0"><strong>Project:</strong></td><td>${projName}</td></tr>
+                                <tr><td style="padding:4px 0"><strong>Priority:</strong></td><td>${priority}</td></tr>
+                                <tr><td style="padding:4px 0"><strong>Type:</strong></td><td>${type}</td></tr>
+                                ${startDate ? `<tr><td style="padding:4px 0"><strong>Start:</strong></td><td>${startDate}</td></tr>` : ''}
+                                ${endDate ? `<tr><td style="padding:4px 0"><strong>Due:</strong></td><td>${endDate}</td></tr>` : ''}
+                            </table>
+                            <p style="margin:16px 0 0;font-size:13px;color:#999">— NexBoard</p>
+                        </div>
+                    </div>`
+                );
+            } catch (e) { }
+        }
+        res.json({ id, title, desc, status, priority, type, assigneeId, projectId, createdAt, completedAt, inProgressAt, startDate: startDate || null, endDate: endDate || null });
+    } catch (err) {
+        console.error("Failed to insert task:", err.message);
+        res.status(500).json({ error: err.message });
+    }
 });
 
-app.delete('/api/tasks/:id', (req, res) => {
-    // Need to get projectId first to decrement count
-    db.get("SELECT projectId, title FROM tasks WHERE id = ?", [req.params.id], (err, row) => {
-        if (row) {
-            db.run("UPDATE projects SET taskCount = taskCount - 1 WHERE id = ?", [row.projectId]);
+app.delete('/api/tasks/:id', async (req, res) => {
+    try {
+        const taskRes = await pool.query("SELECT projectId, title FROM tasks WHERE id = $1", [req.params.id]);
+        if (taskRes.rows.length > 0) {
+            const row = taskRes.rows[0];
+            await pool.query("UPDATE projects SET taskCount = taskCount - 1 WHERE id = $1", [row.projectid]);
             logTaskActivity(req.params.id, req.query.userId || null, 'deleted', `Task "${row.title}" deleted`);
         }
-        db.run("DELETE FROM tasks WHERE id = ?", req.params.id, function (err) {
-            if (err) return res.status(500).json({ error: err.message });
-            res.json({ message: "deleted", changes: this.changes });
-        });
-    });
+        const result = await pool.query("DELETE FROM tasks WHERE id = $1", [req.params.id]);
+        res.json({ message: "deleted", changes: result.rowCount });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
 });
 
-app.put('/api/tasks/:id', (req, res) => {
+app.put('/api/tasks/:id', async (req, res) => {
     const { title, desc, status, priority, type, assigneeId, completedAt: providedCompletedAt, inProgressAt: providedInProgressAt, startDate, endDate } = req.body;
     let completedAt = null;
     let inProgressAt = providedInProgressAt || null;
@@ -616,57 +604,58 @@ app.put('/api/tasks/:id', (req, res) => {
 
     if (status === 'done') {
         completedAt = providedCompletedAt || new Date().toISOString();
-        query = `UPDATE tasks SET title = ?, desc = ?, status = ?, priority = ?, type = ?, assigneeId = ?, completedAt = ?, inProgressAt = ?, startDate = ?, endDate = ? WHERE id = ?`;
+        query = `UPDATE tasks SET title = $1, "desc" = $2, status = $3, priority = $4, type = $5, assigneeId = $6, completedAt = $7, inProgressAt = $8, startDate = $9, endDate = $10 WHERE id = $11`;
         params = [title, desc, status, priority, type, assigneeId, completedAt, inProgressAt, startDate || null, endDate || null, req.params.id];
     } else if (status === 'in-progress') {
         inProgressAt = providedInProgressAt || new Date().toISOString();
-        query = `UPDATE tasks SET title = ?, desc = ?, status = ?, priority = ?, type = ?, assigneeId = ?, completedAt = NULL, inProgressAt = ?, startDate = ?, endDate = ? WHERE id = ?`;
+        query = `UPDATE tasks SET title = $1, "desc" = $2, status = $3, priority = $4, type = $5, assigneeId = $6, completedAt = NULL, inProgressAt = $7, startDate = $8, endDate = $9 WHERE id = $10`;
         params = [title, desc, status, priority, type, assigneeId, inProgressAt, startDate || null, endDate || null, req.params.id];
     } else {
-        query = `UPDATE tasks SET title = ?, desc = ?, status = ?, priority = ?, type = ?, assigneeId = ?, completedAt = NULL, startDate = ?, endDate = ? WHERE id = ?`;
+        query = `UPDATE tasks SET title = $1, "desc" = $2, status = $3, priority = $4, type = $5, assigneeId = $6, completedAt = NULL, startDate = $7, endDate = $8 WHERE id = $9`;
         params = [title, desc, status, priority, type, assigneeId, startDate || null, endDate || null, req.params.id];
     }
 
-    db.run(query, params,
-        function (err) {
-            if (err) return res.status(500).json({ error: err.message });
+    try {
+        const result = await pool.query(query, params);
 
-            // Log activity for task update
-            const changes = [];
-            if (title) changes.push(`title, description, priority: ${priority}, type: ${type}`);
-            if (status) changes.push(`status → ${status}`);
-            logTaskActivity(req.params.id, req.body.updatedByUserId || null, 'updated', `Task updated: ${changes.join(', ')}`);
+        // Log activity for task update
+        const changes = [];
+        if (title) changes.push(`title, description, priority: ${priority}, type: ${type}`);
+        if (status) changes.push(`status → ${status}`);
+        logTaskActivity(req.params.id, req.body.updatedByUserId || null, 'updated', `Task updated: ${changes.join(', ')}`);
 
-            // If assignee changed, notify the new assignee
-            if (assigneeId) {
-                db.get("SELECT projectId FROM tasks WHERE id = ?", [req.params.id], (e, taskRow) => {
-                    const projId = taskRow ? taskRow.projectId : '';
-                    db.get("SELECT name FROM projects WHERE id = ?", [projId], (e2, proj) => {
-                        const projName = proj ? proj.name : projId;
-                        notifyUserByEmail(assigneeId,
-                            `📋 Task Updated: ${title}`,
-                            `<div style="font-family:Inter,sans-serif;max-width:500px;margin:auto;border:1px solid #e0e0e0;border-radius:8px;overflow:hidden">
-                                <div style="background:#FF991F;color:white;padding:16px 20px"><h2 style="margin:0;font-size:18px">Task Updated / Assigned</h2></div>
-                                <div style="padding:20px">
-                                    <h3 style="margin:0 0 8px">${title}</h3>
-                                    <table style="font-size:14px;color:#333;width:100%">
-                                        <tr><td style="padding:4px 0"><strong>Project:</strong></td><td>${projName}</td></tr>
-                                        <tr><td style="padding:4px 0"><strong>Status:</strong></td><td>${status}</td></tr>
-                                        <tr><td style="padding:4px 0"><strong>Priority:</strong></td><td>${priority}</td></tr>
-                                    </table>
-                                    <p style="margin:16px 0 0;font-size:13px;color:#999">— NexBoard</p>
-                                </div>
-                            </div>`
-                        );
-                    });
-                });
-            }
+        // If assignee changed, notify the new assignee
+        if (assigneeId) {
+            try {
+                const taskRowRes = await pool.query("SELECT projectId FROM tasks WHERE id = $1", [req.params.id]);
+                const projId = taskRowRes.rows[0] ? taskRowRes.rows[0].projectid : '';
+                const projRes = await pool.query("SELECT name FROM projects WHERE id = $1", [projId]);
+                const projName = projRes.rows[0] ? projRes.rows[0].name : projId;
+                notifyUserByEmail(assigneeId,
+                    `📋 Task Updated: ${title}`,
+                    `<div style="font-family:Inter,sans-serif;max-width:500px;margin:auto;border:1px solid #e0e0e0;border-radius:8px;overflow:hidden">
+                        <div style="background:#FF991F;color:white;padding:16px 20px"><h2 style="margin:0;font-size:18px">Task Updated / Assigned</h2></div>
+                        <div style="padding:20px">
+                            <h3 style="margin:0 0 8px">${title}</h3>
+                            <table style="font-size:14px;color:#333;width:100%">
+                                <tr><td style="padding:4px 0"><strong>Project:</strong></td><td>${projName}</td></tr>
+                                <tr><td style="padding:4px 0"><strong>Status:</strong></td><td>${status}</td></tr>
+                                <tr><td style="padding:4px 0"><strong>Priority:</strong></td><td>${priority}</td></tr>
+                            </table>
+                            <p style="margin:16px 0 0;font-size:13px;color:#999">— NexBoard</p>
+                        </div>
+                    </div>`
+                );
+            } catch (e) { }
+        }
 
-            res.json({ message: "updated", changes: this.changes, completedAt, inProgressAt });
-        });
+        res.json({ message: "updated", changes: result.rowCount, completedAt, inProgressAt });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
 });
 
-app.put('/api/tasks/:id/status', (req, res) => {
+app.put('/api/tasks/:id/status', async (req, res) => {
     const { status, inProgressAt: providedInProgressAt } = req.body;
     let completedAt = null;
     let inProgressAt = providedInProgressAt || null;
@@ -674,133 +663,144 @@ app.put('/api/tasks/:id/status', (req, res) => {
 
     if (status === 'done') {
         completedAt = new Date().toISOString();
-        query = `UPDATE tasks SET status = ?, completedAt = ?, inProgressAt = ? WHERE id = ?`;
+        query = `UPDATE tasks SET status = $1, completedAt = $2, inProgressAt = $3 WHERE id = $4`;
         params = [status, completedAt, inProgressAt, req.params.id];
     } else if (status === 'in-progress') {
         inProgressAt = providedInProgressAt || new Date().toISOString();
-        query = `UPDATE tasks SET status = ?, completedAt = NULL, inProgressAt = ? WHERE id = ?`;
+        query = `UPDATE tasks SET status = $1, completedAt = NULL, inProgressAt = $2 WHERE id = $3`;
         params = [status, inProgressAt, req.params.id];
     } else {
-        query = `UPDATE tasks SET status = ?, completedAt = NULL WHERE id = ?`;
+        query = `UPDATE tasks SET status = $1, completedAt = NULL WHERE id = $2`;
         params = [status, req.params.id];
     }
 
-    db.run(query, params,
-        function (err) {
-            if (err) return res.status(500).json({ error: err.message });
-            // Log status change activity
-            logTaskActivity(req.params.id, req.body.userId || null, 'status_changed', `Status changed to "${status}"`);
-            res.json({ message: "status updated", changes: this.changes, completedAt, inProgressAt });
-        });
+    try {
+        const result = await pool.query(query, params);
+        // Log status change activity
+        logTaskActivity(req.params.id, req.body.userId || null, 'status_changed', `Status changed to "${status}"`);
+        res.json({ message: "status updated", changes: result.rowCount, completedAt, inProgressAt });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
 });
 
 // TASK REMARKS
-app.get('/api/tasks/:id/remarks', (req, res) => {
-    db.all(`SELECT r.*, u.name as userName, u.initials, u.color FROM task_remarks r LEFT JOIN users u ON r.userId = u.id WHERE r.taskId = ? ORDER BY r.remarkDate DESC`, [req.params.id], (err, rows) => {
-        if (err) return res.status(500).json({ error: err.message });
-        res.json(rows || []);
-    });
+app.get('/api/tasks/:id/remarks', async (req, res) => {
+    try {
+        const result = await pool.query(`SELECT r.*, u.name as "userName", u.initials, u.color FROM task_remarks r LEFT JOIN users u ON r.userId = u.id WHERE r.taskId = $1 ORDER BY r.remarkDate DESC`, [req.params.id]);
+        res.json(result.rows || []);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
 });
 
-app.post('/api/tasks/:id/remarks', (req, res) => {
+app.post('/api/tasks/:id/remarks', async (req, res) => {
     const { userId, remark } = req.body;
     const remarkDate = new Date().toISOString();
-    db.run(`INSERT INTO task_remarks (taskId, userId, remark, remarkDate) VALUES (?, ?, ?, ?)`,
-        [req.params.id, userId, remark, remarkDate],
-        function (err) {
-            if (err) return res.status(500).json({ error: err.message });
-            res.json({ id: this.lastID, taskId: req.params.id, userId, remark, remarkDate });
-        });
+    try {
+        const result = await pool.query(
+            `INSERT INTO task_remarks (taskId, userId, remark, remarkDate) VALUES ($1, $2, $3, $4) RETURNING id`,
+            [req.params.id, userId, remark, remarkDate]
+        );
+        res.json({ id: result.rows[0].id, taskId: req.params.id, userId, remark, remarkDate });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
 });
 
 // PROJECT CHAT MESSAGES
-app.get('/api/projects/:id/messages', (req, res) => {
+app.get('/api/projects/:id/messages', async (req, res) => {
     console.log(`[GET] Fetching messages for project: ${req.params.id}`);
-    db.all(`
-        SELECT m.*, u.name as userName, u.initials, u.color,
-               mu.name as mentionedUserName, p.name as projectName
-        FROM messages m
-        LEFT JOIN projects p ON m.projectId = p.id
-        LEFT JOIN users u ON m.userId = u.id
-        LEFT JOIN users mu ON m.mentionedUserId = mu.id
-        WHERE m.projectId = ?
-        ORDER BY m.createdAt ASC
-    `, [req.params.id], (err, rows) => {
-        if (err) {
-            console.error(`[GET] Project messages error for ${req.params.id}: ${err.message}`);
-            return res.status(500).json({ error: err.message });
-        }
-        res.json(rows || []);
-    });
+    try {
+        const result = await pool.query(`
+            SELECT m.*, u.name as "userName", u.initials, u.color,
+                   mu.name as "mentionedUserName", p.name as "projectName"
+            FROM messages m
+            LEFT JOIN projects p ON m.projectId = p.id
+            LEFT JOIN users u ON m.userId = u.id
+            LEFT JOIN users mu ON m.mentionedUserId = mu.id
+            WHERE m.projectId = $1
+            ORDER BY m.createdAt ASC
+        `, [req.params.id]);
+        res.json(result.rows || []);
+    } catch (err) {
+        console.error(`[GET] Project messages error for ${req.params.id}: ${err.message}`);
+        res.status(500).json({ error: err.message });
+    }
 });
 
 // PROJECT USERS (for mentions)
-app.get('/api/projects/:id/users', (req, res) => {
-    db.all(`
-        SELECT u.id, u.name, u.initials, u.color, u.role
-        FROM users u
-        JOIN project_users pu ON u.id = pu.userId
-        WHERE pu.projectId = ?
-    `, [req.params.id], (err, rows) => {
-        if (err) return res.status(500).json({ error: err.message });
-        res.json(rows || []);
-    });
+app.get('/api/projects/:id/users', async (req, res) => {
+    try {
+        const result = await pool.query(`
+            SELECT u.id, u.name, u.initials, u.color, u.role
+            FROM users u
+            JOIN project_users pu ON u.id = pu.userId
+            WHERE pu.projectId = $1
+        `, [req.params.id]);
+        res.json(result.rows || []);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
 });
 
 // GET global messages for everyone
-app.get('/api/global/messages', (req, res) => {
-    db.all(`
-        SELECT m.*, u.name as userName, u.initials, u.color, 'Global Chat' as projectName
-        FROM messages m
-        LEFT JOIN users u ON m.userId = u.id
-        WHERE m.projectId = 'global'
-        ORDER BY m.createdAt DESC
-        LIMIT 50
-    `, [], (err, rows) => {
-        if (err) return res.status(500).json({ error: err.message });
-        res.json(rows || []);
-    });
+app.get('/api/global/messages', async (req, res) => {
+    try {
+        const result = await pool.query(`
+            SELECT m.*, u.name as "userName", u.initials, u.color, 'Global Chat' as "projectName"
+            FROM messages m
+            LEFT JOIN users u ON m.userId = u.id
+            WHERE m.projectId = 'global'
+            ORDER BY m.createdAt DESC
+            LIMIT 50
+        `);
+        res.json(result.rows || []);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
 });
 
 // GET all messages for projects a user belongs to (for global notifications)
-app.get('/api/users/:userId/messages', (req, res) => {
-    db.all(`
-        SELECT m.*, u.name as userName, u.initials, u.color, p.name as projectName
-        FROM messages m
-        LEFT JOIN project_users pu ON m.projectId = pu.projectId
-        LEFT JOIN projects p ON m.projectId = p.id
-        LEFT JOIN users u ON m.userId = u.id
-        WHERE (pu.userId = ? OR m.projectId = 'global')
-        ORDER BY m.createdAt DESC
-        LIMIT 30
-    `, [req.params.userId], (err, rows) => {
-        if (err) return res.status(500).json({ error: err.message });
-        res.json(rows || []);
-    });
+app.get('/api/users/:userId/messages', async (req, res) => {
+    try {
+        const result = await pool.query(`
+            SELECT m.*, u.name as "userName", u.initials, u.color, p.name as "projectName"
+            FROM messages m
+            LEFT JOIN project_users pu ON m.projectId = pu.projectId
+            LEFT JOIN projects p ON m.projectId = p.id
+            LEFT JOIN users u ON m.userId = u.id
+            WHERE (pu.userId = $1 OR m.projectId = 'global')
+            ORDER BY m.createdAt DESC
+            LIMIT 30
+        `, [req.params.userId]);
+        res.json(result.rows || []);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
 });
 
-
-app.post('/api/projects/:id/messages', (req, res) => {
+app.post('/api/projects/:id/messages', async (req, res) => {
     const { userId, message, mentionedUserId } = req.body;
     const createdAt = new Date().toISOString();
     console.log(`[POST] New message for project ${req.params.id} from user ${userId}`);
 
-    db.run(`INSERT INTO messages (projectId, userId, message, mentionedUserId, createdAt) VALUES (?, ?, ?, ?, ?)`,
-        [req.params.id, userId, message, mentionedUserId || null, createdAt],
-        function (err) {
-            if (err) {
-                console.error(`[POST] Message insert error: ${err.message}`);
-                return res.status(500).json({ error: err.message });
-            }
-
-            const newMsg = { id: this.lastID, projectId: req.params.id, userId, message, mentionedUserId: mentionedUserId || null, createdAt };
-            res.json(newMsg);
-        });
+    try {
+        const result = await pool.query(
+            `INSERT INTO messages (projectId, userId, message, mentionedUserId, createdAt) VALUES ($1, $2, $3, $4, $5) RETURNING id`,
+            [req.params.id, userId, message, mentionedUserId || null, createdAt]
+        );
+        const newMsg = { id: result.rows[0].id, projectId: req.params.id, userId, message, mentionedUserId: mentionedUserId || null, createdAt };
+        res.json(newMsg);
+    } catch (err) {
+        console.error(`[POST] Message insert error: ${err.message}`);
+        res.status(500).json({ error: err.message });
+    }
 });
 
 // DUE DATE REMINDER SYSTEM
 // Checks for tasks due tomorrow and sends email reminders to assignees
-function checkDueReminders() {
+async function checkDueReminders() {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const tomorrow = new Date(today);
@@ -809,19 +809,17 @@ function checkDueReminders() {
 
     console.log(`[Reminder Check] Running due date check for: ${tomorrowStr}`);
 
-    db.all(`
-        SELECT t.id, t.title, t.desc, t.endDate, t.assigneeId, t.priority, t.status,
-               p.name as projectName, u.name as assigneeName, u.email as assigneeEmail
-        FROM tasks t
-        LEFT JOIN projects p ON t.projectId = p.id
-        LEFT JOIN users u ON t.assigneeId = u.id
-        WHERE t.endDate = ? AND t.status != 'done' AND t.assigneeId IS NOT NULL
-    `, [tomorrowStr], (err, rows) => {
-        if (err) {
-            console.error('[Reminder Check] Error:', err.message);
-            return;
-        }
+    try {
+        const result = await pool.query(`
+            SELECT t.id, t.title, t."desc", t.endDate, t.assigneeId, t.priority, t.status,
+                   p.name as "projectName", u.name as "assigneeName", u.email as "assigneeEmail"
+            FROM tasks t
+            LEFT JOIN projects p ON t.projectId = p.id
+            LEFT JOIN users u ON t.assigneeId = u.id
+            WHERE t.endDate = $1 AND t.status != 'done' AND t.assigneeId IS NOT NULL
+        `, [tomorrowStr]);
 
+        const rows = result.rows;
         if (!rows || rows.length === 0) {
             console.log('[Reminder Check] No tasks due tomorrow.');
             return;
@@ -850,7 +848,9 @@ function checkDueReminders() {
                 console.log(`[Reminder Check] Sent reminder to ${task.assigneeName} (${task.assigneeEmail}) for task "${task.title}"`);
             }
         });
-    });
+    } catch (err) {
+        console.error('[Reminder Check] Error:', err.message);
+    }
 }
 
 // Manual trigger endpoint for due reminders
@@ -867,28 +867,36 @@ setTimeout(checkDueReminders, 5000);
 
 // TASK ACTIVITY LOG
 // Helper: Log task activity
-function logTaskActivity(taskId, userId, action, details) {
+async function logTaskActivity(taskId, userId, action, details) {
     if (!taskId) return;
     const createdAt = new Date().toISOString();
     console.log(`[Activity Log] Logging: ${taskId}, ${userId}, ${action}, ${details}`);
-    db.run(`INSERT INTO task_activity (taskId, userId, action, details, createdAt) VALUES (?, ?, ?, ?, ?)`,
-        [taskId, userId, action, details || '', createdAt], (err) => {
-            if (err) console.error(`[Activity Log] Error:`, err.message);
-            else console.log(`[Activity Log] Success`);
-        });
+    try {
+        await pool.query(
+            `INSERT INTO task_activity (taskId, userId, action, details, createdAt) VALUES ($1, $2, $3, $4, $5)`,
+            [taskId, userId, action, details || '', createdAt]
+        );
+        console.log(`[Activity Log] Success`);
+    } catch (err) {
+        console.error(`[Activity Log] Error:`, err.message);
+    }
 }
 
 // GET task activity log
-app.get('/api/activity/task/:id', (req, res) => {
-    db.all(`SELECT a.*, u.name as userName, u.initials, u.color
+app.get('/api/activity/task/:id', async (req, res) => {
+    try {
+        const result = await pool.query(`
+            SELECT a.*, u.name as "userName", u.initials, u.color
             FROM task_activity a
             LEFT JOIN users u ON a.userId = u.id
-            WHERE a.taskId = ?
+            WHERE a.taskId = $1
             ORDER BY a.createdAt DESC
-            LIMIT 50`, [req.params.id], (err, rows) => {
-        if (err) return res.status(500).json({ error: err.message });
-        res.json(rows || []);
-    });
+            LIMIT 50
+        `, [req.params.id]);
+        res.json(result.rows || []);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
 });
 
 app.listen(port, () => {
