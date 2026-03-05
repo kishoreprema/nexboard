@@ -56,12 +56,18 @@ console.log('__dirname:', __dirname);
 console.log('process.cwd():', process.cwd());
 
 // Initialize PostgreSQL Database Pool
-console.log("Loading Postgres Pool...");
-console.log("DATABASE_URL is:", process.env.DATABASE_URL ? "SET" : "UNDEFINED");
+if (!process.env.DATABASE_URL) {
+    console.error("FATAL ERROR: DATABASE_URL is not defined in environment variables!");
+    console.error("The app will attempt to connect to localhost:5432 and likely FAIL.");
+}
 
 const pool = new Pool({
     connectionString: process.env.DATABASE_URL,
     ssl: { rejectUnauthorized: false }
+});
+
+pool.on('error', (err) => {
+    console.error('Unexpected error on idle client', err);
 });
 
 async function initDB() {
