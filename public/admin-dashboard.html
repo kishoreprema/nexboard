@@ -210,18 +210,35 @@
                 </form>
             </div>
         </div>
-    </div>
+        <!-- Manage Access Modal -->
+        <div class="modal-overlay hidden" id="access-modal">
+            <div class="modal-content" style="max-width: 500px;">
+                <div class="modal-header">
+                    <h2>Manage Access: <span id="access-project-name"></span></h2>
+                    <button class="icon-btn" id="close-access-modal"><i class="fa-solid fa-xmark"></i></button>
+                </div>
+                <div class="modal-body">
+                    <p style="margin-bottom: 16px; color: var(--text-secondary); font-size: 0.9rem;">Allocate users to
+                        this
+                        project. Unallocated users cannot view or interact with this project.</p>
+                    <div class="team-list" id="access-list"
+                        style="max-height: 300px; overflow-y: auto; display: flex; flex-direction: column; gap: 12px;">
+                        <!-- Users injected here -->
+                    </div>
+                </div>
+            </div>
+        </div>
 
-    <script src="chat-widget.js?v=1"></script>
-    <script src="admin-dashboard.js?v=2"></script>
-    <script src="profile.js?v=1"></script>
-    <script src="theme.js"></script>
-    <script>
-        // Inline script to handle Logout globally
-        document.getElementById('logout-btn').addEventListener('click', () => {
-            window.location.href = 'login.html';
-        });
-    </script>
+        <script src="chat-widget.js?v=1"></script>
+        <script src="admin-dashboard.js?v=2"></script>
+        <script src="profile.js?v=1"></script>
+        <script src="theme.js"></script>
+        <script>
+            // Inline script to handle Logout globally
+            document.getElementById('logout-btn').addEventListener('click', () => {
+                window.location.href = 'login.html';
+            });
+        </script>
 
 </body>
 

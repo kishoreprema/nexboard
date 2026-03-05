@@ -173,6 +173,7 @@ function renderProjects(filterText = '') {
                 </div>
                 <div class="project-actions" style="display: flex; gap: 8px;">
                     <button class="export-btn" title="Export Project Data to CSV" style="background: transparent; border: none; cursor: pointer; color: var(--text-secondary); font-size: 1rem;"><i class="fa-solid fa-file-export" style="pointer-events: none;"></i></button>
+                    <button class="access-btn" title="Manage Access" style="background: transparent; border: none; cursor: pointer; color: var(--text-primary); font-size: 1rem;"><i class="fa-solid fa-user-plus" style="pointer-events: none;"></i></button>
                     <button class="edit-btn" style="background: transparent; border: none; cursor: pointer; color: var(--text-secondary); font-size: 1rem;"><i class="fa-solid fa-pen" style="pointer-events: none;"></i></button>
                     <button class="delete-btn" style="background: transparent; border: none; cursor: pointer; color: var(--accent-red); font-size: 1rem;"><i class="fa-solid fa-trash" style="pointer-events: none;"></i></button>
                 </div>
@@ -188,6 +189,11 @@ function renderProjects(filterText = '') {
         card.querySelector('.export-btn').addEventListener('click', (e) => {
             e.stopPropagation();
             window.location.href = `${API_URL}/projects/${project.id}/export`;
+        });
+
+        card.querySelector('.access-btn').addEventListener('click', (e) => {
+            e.stopPropagation();
+            openAccessModal(project.id, project.name);
         });
 
         card.querySelector('.edit-btn').addEventListener('click', (e) => {
@@ -557,6 +563,93 @@ async function handleTeamSubmit(e) {
 }
 
 // ==========================================================
+// ACCESS MANAGEMENT LOGIC
+// ==========================================================
+let currentAccessProjectId = null;
+const accessModal = document.getElementById('access-modal');
+const closeAccessModalBtn = document.getElementById('close-access-modal');
+const accessList = document.getElementById('access-list');
+
+async function openAccessModal(projectId, projectName) {
+    currentAccessProjectId = projectId;
+    document.getElementById('access-project-name').textContent = projectName;
+
+    // Fetch users currently assigned to this project
+    try {
+        const res = await fetch(`${API_URL}/projects/${projectId}/users`);
+        const assignedUsers = await res.json();
+        const assignedIds = assignedUsers.map(u => u.id);
+
+        renderAccessList(assignedIds);
+        accessModal.classList.remove('hidden');
+    } catch (err) {
+        console.error("Failed to fetch project users", err);
+    }
+}
+
+function closeAccessModal() {
+    accessModal.classList.add('hidden');
+    currentAccessProjectId = null;
+}
+
+function renderAccessList(assignedIds) {
+    accessList.innerHTML = '';
+
+    users.forEach(user => {
+        if (user.role === 'admin') return; // Don't show admins here as they have global access
+
+        const isAssigned = assignedIds.includes(user.id);
+        const div = document.createElement('div');
+        div.style.display = 'flex';
+        div.style.alignItems = 'center';
+        div.style.justifyContent = 'space-between';
+        div.style.padding = '8px';
+        div.style.border = '1px solid var(--border-color)';
+        div.style.borderRadius = 'var(--border-radius-sm)';
+
+        div.innerHTML = `
+            <div style="display: flex; align-items: center; gap: 12px;">
+                <div class="user-avatar" style="width: 32px; height: 32px; border-radius: 50%; background-color: ${user.color}; color: white; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 0.8rem;">
+                    ${user.initials}
+                </div>
+                <div style="display: flex; flex-direction: column;">
+                    <span style="font-weight: 500; font-size: 0.95rem;">${user.name}</span>
+                    <span style="font-size: 0.75rem; color: var(--text-secondary); text-transform: uppercase;">${user.role}</span>
+                </div>
+            </div>
+            <button class="toggle-access-btn ${isAssigned ? 'assigned' : 'unassigned'}" data-id="${user.id}" data-assigned="${isAssigned}" style="padding: 6px 12px; border-radius: 4px; border: 1px solid ${isAssigned ? 'var(--accent-red)' : 'var(--primary-color)'}; background: ${isAssigned ? '#FFF0F0' : '#EAF2FF'}; color: ${isAssigned ? 'var(--accent-red)' : 'var(--primary-color)'}; cursor: pointer; font-size: 0.8rem; font-weight: 600;">
+                ${isAssigned ? 'Remove Access' : 'Grant Access'}
+            </button>
+        `;
+
+        div.querySelector('.toggle-access-btn').addEventListener('click', async (e) => {
+            const userId = e.currentTarget.dataset.id;
+            const currentlyAssigned = e.currentTarget.dataset.assigned === 'true';
+
+            try {
+                if (currentlyAssigned) {
+                    await fetch(`${API_URL}/projects/${currentAccessProjectId}/users/${userId}`, { method: 'DELETE' });
+                } else {
+                    await fetch(`${API_URL}/projects/${currentAccessProjectId}/users`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ userId })
+                    });
+                }
+                // Refresh list
+                const res = await fetch(`${API_URL}/projects/${currentAccessProjectId}/users`);
+                const newAssignedUsers = await res.json();
+                renderAccessList(newAssignedUsers.map(u => u.id));
+            } catch (err) {
+                console.error("Toggle access failed", err);
+            }
+        });
+
+        accessList.appendChild(div);
+    });
+}
+
+// ==========================================================
 // CHART LOGIC
 // ==========================================================
 let globalChartInstance = null;
@@ -806,6 +899,18 @@ function setupEventListeners() {
         console.log('[AdminDashboard] Attaching teamModal listener');
         teamModal.addEventListener('click', e => {
             if (e.target === teamModal) closeTeamModal();
+        });
+    }
+
+    if (closeAccessModalBtn) {
+        console.log('[AdminDashboard] Attaching closeAccessModalBtn listener');
+        closeAccessModalBtn.addEventListener('click', closeAccessModal);
+    }
+
+    if (accessModal) {
+        console.log('[AdminDashboard] Attaching accessModal listener');
+        accessModal.addEventListener('click', e => {
+            if (e.target === accessModal) closeAccessModal();
         });
     }
 
